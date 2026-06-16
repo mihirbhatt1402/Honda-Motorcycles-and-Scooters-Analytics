@@ -957,8 +957,8 @@ function DimSourceTab({rows,mf,rowKey,dimLabel,xTabLabel}){
     activeMonths.map(M=>ce(DimMonthGrid,{key:M,M,rows,rowKey,dimLabel})),
     ce('div',{style:{margin:'24px 0 16px',borderTop:'2px solid #D8EED8'}}),
     ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',
-      letterSpacing:'.08em',marginBottom:12}},xTabLabel),
-    ce(CrossTab,{rows,mf,rowKey,rowLabel:xTabLabel,limit:60})
+      letterSpacing:'.08em',marginBottom:12}},xTabLabel+' — All Months Summary'),
+    ce(DimMonthGrid,{M:mf,rows,rowKey,dimLabel})
   );
 }
 
