@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Royal Enfield Lead Disposition Dashboard v1.0</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap');
+:root{
+  --green:#2D6A4F;--green-d:#1B4332;--green-900:#081C15;
+  --green-50:#F0F7F4;--green-100:#D8EED8;--green-200:#A8D5BA;
+  --gold:#C9A227;--gold-light:#F5E9C0;
+  --dur-fast:120ms;--dur-base:200ms;
+  --shadow-1:0 1px 4px rgba(45,106,79,.10),0 0 0 1px rgba(45,106,79,.07)
+}
+body{font-family:'Inter',system-ui,sans-serif;background:#F5FBF8;color:#0a1f14;min-height:100vh}
+.fade-up{animation:fadeUp .25s ease both}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.kpi{position:relative;background:#fff;border-radius:12px;padding:14px 16px 12px;box-shadow:var(--shadow-1);overflow:hidden;border:1px solid var(--green-100)}
+.kpi-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#1B4332;margin-bottom:6px}
+.kpi-value{font-size:22px;font-weight:700;color:#0a1f14;letter-spacing:-.03em;font-family:'DM Mono',monospace}
+.kpi-sub{font-size:10px;color:#2D6A4F;margin-top:3px;font-family:'DM Mono',monospace}
+.card{background:#fff;border-radius:12px;border:1px solid var(--green-200);box-shadow:var(--shadow-1)}
+.drop-zone{border:2px dashed var(--green-200);border-radius:12px;cursor:pointer;transition:all var(--dur-base);background:#f8fdf9}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--green);background:var(--green-50)}
+.tab-pill{padding:9px 20px;font-size:12px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:#1B4332;transition:all var(--dur-fast);font-family:inherit;white-space:nowrap}
+.tab-pill.active{color:var(--green-d);border-bottom-color:var(--green)}
+.tab-pill:hover:not(.active){color:#081C15;background:var(--green-50)}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{padding:8px 10px;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:#fff;background:var(--green-900);text-align:center;border:1px solid rgba(255,255,255,.12);white-space:nowrap;position:sticky;top:0;z-index:2}
+th.left{text-align:left}
+th.sub{background:#1B4332;font-size:8px;color:#A8D5BA;position:sticky;top:32px;z-index:1}
+td{padding:6px 10px;border:1px solid var(--green-100);font-size:11px;text-align:right;font-family:'DM Mono',monospace;background:#fff;vertical-align:middle}
+td.label{text-align:left;font-family:inherit;font-weight:600;color:#0a1f14;background:#fff;position:sticky;left:0;z-index:1;border-right:2px solid var(--green-200)}
+tr:hover td{background:var(--green-50)}
+tr:hover td.label{background:var(--green-50)}
+tr.total-row td{background:var(--green-900);color:#f0f7f4;font-weight:700}
+tr.total-row td.label{background:var(--green-900);color:#A8D5BA}
+tr.section-row td{background:var(--green-50);font-weight:600;color:#1B4332}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;font-family:'DM Mono',monospace;white-space:nowrap}
+.badge-green{background:#dcfce7;color:#166534}
+.badge-amber{background:#fef9c3;color:#854d0e}
+.badge-red{background:#ffe4e6;color:#be123c}
+.badge-blue{background:#dbeafe;color:#1e40af}
+.badge-green2{background:#D8EED8;color:#081C15}
+.badge-gray{color:#6b7280;font-family:'DM Mono',monospace;font-size:10px}
+.row-even{background:#fff}
+.row-odd{background:var(--green-50)}
+.scroll-x{overflow-x:auto}
+.filter-bar{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--green-50);border:1px solid var(--green-200);border-radius:10px;margin-bottom:14px;flex-wrap:wrap}
+.filter-bar label{font-size:9px;font-weight:700;color:var(--green-900);text-transform:uppercase;letter-spacing:.08em}
+select{border:1px solid var(--green-200);border-radius:20px;padding:4px 12px;font-size:11px;font-family:inherit;outline:none;background:#fff;cursor:pointer;color:#0a1f14}
+select:focus{border-color:var(--green);box-shadow:0 0 0 2px rgba(45,106,79,.15)}
+.prog-fill{background:linear-gradient(90deg,var(--green-d),var(--green));transition:width .3s ease}
+.section-title{font-size:11px;font-weight:700;color:var(--green-900);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.section-title::after{content:'';flex:1;height:1px;background:var(--green-200)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════════
+   GOOGLE SHEETS SYNC CONFIG — Royal Enfield LDR Dashboard
+   ═══════════════════════════════════════════════════════════════════ */
+const SHEETS_CONFIG = Object.freeze({
+  LDR_SHEET_URL:         '',
+  AUTO_SYNC_ON_LOAD:     true,
+  AUTO_SYNC_INTERVAL_MS: 0,
+});
+
+function sheetUrlToCsvUrl(url){
+  const u=(url||'').trim();
+  if(!u) throw new Error('Sheet URL is empty — paste it in the Sync panel.');
+  const idM=u.match(/\/spreadsheets\/d\/([a-zA-Z0-9_\-]+)/);
+  if(!idM) throw new Error('Not a valid Google Sheets URL.\nExpected: https://docs.google.com/spreadsheets/d/…');
+  const id=idM[1];
+  const gidM=u.match(/[#&?]gid=(\d+)/);
+  const gid=gidM?gidM[1]:'0';
+  return 'https://docs.google.com/spreadsheets/d/'+id+'/gviz/tq?tqx=out:csv&gid='+gid;
+}
+
+async function fetchSheetCsv(url){
+  const csvUrl=sheetUrlToCsvUrl(url);
+  let res;
+  try{ res=await fetch(csvUrl,{cache:'no-store'}); }
+  catch(e){ throw new Error('Network error — check internet connection. ('+e.message+')'); }
+  if(!res.ok){
+    if(res.status===401||res.status===403)
+      throw new Error('Access denied.\nShare the sheet: File → Share → Anyone with the link → Viewer');
+    if(res.status===404) throw new Error('Sheet not found. Double-check the URL.');
+    throw new Error('Google Sheets fetch failed: HTTP '+res.status);
+  }
+  const text=await res.text();
+  if(!text||text.trim().length<5) throw new Error('Sheet returned no data.');
+  if(text.trim().startsWith('<')) throw new Error('Sheet returned HTML instead of CSV.\nShare it as "Anyone with the link → Viewer".');
+  return text;
+}
+
+function parseCsvToRows(csvText){
+  if(!window.XLSX) throw new Error('XLSX library not loaded — check internet connection.');
+  const wb=window.XLSX.read(csvText,{type:'string',raw:false});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  return window.XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+}
+
+const ce=React.createElement;
+const {useState,useEffect,useMemo,useRef,useCallback}=React;
+
+/* ── Month helpers ────────────────────────────────────────────────── */
+const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function monthOrder(m){
+  if(!m||m==='-'||m==='') return 0;
+  const match=m.match(/([A-Za-z]+)'(\d+)/);
+  if(!match) return 0;
+  const mi=MONTH_NAMES.indexOf(match[1]);
+  return parseInt(match[2])*100+mi;
+}
+
+/* Returns a Set of n month strings starting from m going backwards (inclusive) */
+function prevMonthsSet(m,n){
+  if(!m||m==='-'||m==='') return new Set();
+  const match=m.match(/([A-Za-z]+)'(\d+)/);
+  if(!match) return new Set();
+  let mi=MONTH_NAMES.indexOf(match[1]);
+  let yr=parseInt(match[2]);
+  const result=new Set();
+  for(let i=0;i<n;i++){
+    result.add(MONTH_NAMES[mi]+"'"+yr);
+    mi--;
+    if(mi<0){mi=11;yr--;}
+  }
+  return result;
+}
+
+/* ── Parse raw rows into structured records ───────────────────────── */
+function parseRows(raw){
+  return raw.map(function(r){
+    function get(keys){
+      for(const k of(Array.isArray(keys)?keys:[keys])){
+        const kl=k.toLowerCase().replace(/\s+/g,' ').trim();
+        for(const rk of Object.keys(r)){
+          if(rk.toLowerCase().replace(/\s+/g,' ').trim()===kl) return String(r[rk]||'').trim();
+        }
+      }
+      return '';
+    }
+    const lead_number   = get('Lead Number');
+    const lt            = get('LT');
+    const source        = get('Source');
+    const primary_src   = get('Primary Source');
+    const dup           = get(['Duplicate Check','Duplicity Check']);
+    const lead_month    = get('Lead Month');
+    const booking_status= get('Booking Status');
+    const booking_month = get('Booking Month');
+    const isUnique      = dup.toLowerCase()==='unique';
+    const bm            = (booking_month==='-'||booking_month==='')?'':booking_month;
+    return{
+      lead_number,
+      lt:lt||'Unknown',
+      source:source||'Unknown',
+      primary_src:primary_src||'Unknown',
+      lead_month,
+      booking_status,
+      booking_month:bm,
+      isUnique,
+      isBooked:booking_status.toLowerCase()==='booked'
+    };
+  }).filter(r=>r.lead_number&&r.lead_month);
+}
+
+/* ── Core aggregate function ──────────────────────────────────────── */
+/* rows   = already filtered by source / lt / primarySrc (NOT by lead_month)
+   mf     = monthFilter string ('All' or e.g. "Mar'2026")                    */
+function aggRE(rows,mf){
+  const leadRows=mf==='All'?rows:rows.filter(r=>r.lead_month===mf);
+  const uniqueLeads=new Set(leadRows.filter(r=>r.isUnique).map(r=>r.lead_number)).size;
+  const totalLeads=leadRows.length;
+  const dupLeads=totalLeads-new Set(leadRows.map(r=>r.lead_number)).size;
+  const dupPct=totalLeads>0?(totalLeads-uniqueLeads)/totalLeads*100:0;
+
+  let bookings=0;
+  if(mf!=='All'){
+    const valid=prevMonthsSet(mf,3);
+    bookings=new Set(
+      rows.filter(r=>r.booking_month===mf&&valid.has(r.lead_month)&&r.isUnique)
+          .map(r=>r.lead_number)
+    ).size;
+  } else {
+    const months=[...new Set(rows.map(r=>r.lead_month))].filter(m=>m&&m!=='-'&&m!=='');
+    for(const M of months){
+      const valid=prevMonthsSet(M,3);
+      bookings+=new Set(
+        rows.filter(r=>r.booking_month===M&&valid.has(r.lead_month)&&r.isUnique)
+            .map(r=>r.lead_number)
+      ).size;
+    }
+  }
+  const e2bPct=uniqueLeads>0?(bookings/uniqueLeads*100):0;
+  return{totalLeads,uniqueLeads,dupLeads,dupPct,bookings,e2bPct};
+}
+
+/* ── Formatters & badges ──────────────────────────────────────────── */
+function Nf(n){return n==null||isNaN(n)?'—':Number(n).toLocaleString('en-IN');}
+function Pf(n,d=1){return(n==null||isNaN(n))?'—':n.toFixed(d)+'%';}
+
+function e2bBadge(pct){
+  if(isNaN(pct)||pct===0) return ce('span',{className:'badge-gray'},'—');
+  const cls=pct>=5?'badge-green':pct>=2?'badge-amber':'badge-red';
+  return ce('span',{className:'badge '+cls},pct.toFixed(1)+'%');
+}
+function dupBadge(pct){
+  if(isNaN(pct)||pct===0) return ce('span',{className:'badge-gray'},'0%');
+  const cls=pct>=30?'badge-red':pct>=15?'badge-amber':'badge-green';
+  return ce('span',{className:'badge '+cls},pct.toFixed(1)+'%');
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   OVERVIEW TAB
+══════════════════════════════════════════════════════════════════════════ */
+function OverviewTab({rows,mf}){
+  const m=useMemo(()=>aggRE(rows,mf),[rows,mf]);
+  const chartRef=useRef(); const chartInst=useRef();
+
+  /* Month-wise trend data */
+  const trendData=useMemo(()=>{
+    const months=[...new Set(rows.map(r=>r.lead_month))].filter(m=>m&&m!=='-').sort((a,b)=>monthOrder(a)-monthOrder(b));
+    return months.map(M=>{
+      const a=aggRE(rows,M);
+      return{month:M,uniqueLeads:a.uniqueLeads,bookings:a.bookings,e2bPct:a.e2bPct};
+    });
+  },[rows]);
+
+  /* Source breakdown */
+  const srcBreak=useMemo(()=>{
+    const map={};
+    for(const r of rows){
+      const s=r.source||'Unknown';
+      if(!map[s]) map[s]=0;
+      if(r.isUnique) map[s]++;
+    }
+    return Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  },[rows]);
+
+  /* Insights */
+  const insights=useMemo(()=>{
+    const srcs=[...new Set(rows.map(r=>r.source))].filter(Boolean).sort();
+    const bySrc={};
+    for(const s of srcs){
+      const sRows=rows.filter(r=>r.source===s);
+      const lts=[...new Set(sRows.map(r=>r.lt))].filter(Boolean);
+      const ltM=lts.map(lt=>({lt,m:aggRE(sRows.filter(r=>r.lt===lt),mf)}))
+        .filter(x=>x.m.uniqueLeads>=5).sort((a,b)=>a.m.e2bPct-b.m.e2bPct);
+      const prims=[...new Set(sRows.map(r=>r.primary_src))].filter(Boolean);
+      const primM=prims.map(p=>({prim:p,m:aggRE(sRows.filter(r=>r.primary_src===p),mf)}))
+        .filter(x=>x.m.uniqueLeads>=5).sort((a,b)=>a.m.e2bPct-b.m.e2bPct);
+      bySrc[s]={
+        total:aggRE(sRows,mf),
+        worstLT:ltM[0]||null,
+        bestLT:ltM[ltM.length-1]||null,
+        worst5:primM.slice(0,5),
+        best5:[...primM].reverse().slice(0,5),
+      };
+    }
+    const srcSorted=srcs.map(s=>({src:s,...bySrc[s]}))
+      .filter(x=>x.total.uniqueLeads>=10)
+      .sort((a,b)=>a.total.e2bPct-b.total.e2bPct);
+    const dupSorted=[...srcSorted].sort((a,b)=>b.total.dupPct-a.total.dupPct);
+    return{srcs,bySrc,srcSorted,
+      worstSrc:srcSorted[0]||null,
+      bestSrc:srcSorted[srcSorted.length-1]||null,
+      highDupSrc:dupSorted[0]||null};
+  },[rows,mf]);
+
+  /* Trend chart */
+  useEffect(()=>{
+    const canvas=chartRef.current;
+    if(!canvas||!window.Chart) return;
+    if(chartInst.current) try{chartInst.current.destroy();}catch(e){}
+    chartInst.current=new Chart(canvas,{
+      type:'bar',
+      data:{
+        labels:trendData.map(d=>d.month),
+        datasets:[
+          {label:'Unique Leads',data:trendData.map(d=>d.uniqueLeads),backgroundColor:'#2D6A4F55',borderColor:'#2D6A4F',borderWidth:1.5,borderRadius:3,yAxisID:'y'},
+          {label:'Bookings',data:trendData.map(d=>d.bookings),backgroundColor:'#C9A22755',borderColor:'#C9A227',borderWidth:1.5,borderRadius:3,yAxisID:'y'},
+          {label:'E2B%',data:trendData.map(d=>parseFloat(d.e2bPct.toFixed(2))),type:'line',borderColor:'#1B4332',backgroundColor:'transparent',borderWidth:2,pointRadius:5,pointBackgroundColor:'#1B4332',yAxisID:'y2',tension:.3},
+        ]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{
+          legend:{position:'top',labels:{boxWidth:10,boxHeight:10,font:{size:10,family:'DM Mono,monospace'},color:'#475569'}},
+          tooltip:{backgroundColor:'rgba(8,28,21,.92)',titleColor:'#f0f7f4',bodyColor:'#A8D5BA',padding:10,cornerRadius:8},
+          datalabels:{display:false}
+        },
+        scales:{
+          x:{grid:{color:'rgba(100,116,139,.1)'},ticks:{color:'#475569',font:{size:10}}},
+          y:{grid:{color:'rgba(100,116,139,.1)'},ticks:{color:'#475569',font:{size:10}},position:'left',title:{display:true,text:'Leads',color:'#94a3b8',font:{size:9}},beginAtZero:true},
+          y2:{position:'right',ticks:{color:'#2D6A4F',font:{size:10},callback:v=>v+'%'},grid:{display:false},title:{display:true,text:'E2B%',color:'#2D6A4F',font:{size:9}},beginAtZero:true}
+        }
+      }
+    });
+    return()=>{try{if(chartInst.current)chartInst.current.destroy();}catch(e){}};
+  },[trendData]);
+
+  const KPIs=[
+    {label:'Total Leads',    value:Nf(m.totalLeads),   sub:'Including duplicates',           color:'#2D6A4F'},
+    {label:'Unique Leads',   value:Nf(m.uniqueLeads),  sub:'Duplicates: '+Nf(m.dupLeads),   color:'#1B4332'},
+    {label:'Duplicity %',    value:m.dupPct.toFixed(1)+'%', sub:'of total leads',            color:'#d97706'},
+    {label:'Bookings',       value:Nf(m.bookings),     sub:'M-2 window attribution',         color:'#C9A227'},
+    {label:'E2B %',          value:m.e2bPct.toFixed(1)+'%',sub:'Bookings ÷ Unique Leads',   color:'#166534'},
+  ];
+
+  return ce('div',{className:'fade-up'},
+    /* KPI strip */
+    ce('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))',gap:10,marginBottom:20}},
+      KPIs.map((k,i)=>ce('div',{key:i,className:'kpi'},
+        ce('div',{style:{position:'absolute',top:0,left:0,right:0,height:3,background:k.color,borderRadius:'12px 12px 0 0'}}),
+        ce('div',{className:'kpi-label'},k.label),
+        ce('div',{className:'kpi-value',style:{fontSize:k.value.length>7?16:20,color:k.color}},k.value),
+        ce('div',{className:'kpi-sub'},k.sub)
+      ))
+    ),
+
+    /* Trend chart */
+    ce('div',{className:'card',style:{padding:'16px 18px',marginBottom:14}},
+      ce('div',{className:'section-title'},'Month-wise Trend — Unique Leads, Bookings & E2B%'),
+      ce('div',{style:{height:240,position:'relative'}},ce('canvas',{ref:chartRef}))
+    ),
+
+    /* Source summary table */
+    ce('div',{className:'card',style:{padding:'16px 18px',marginBottom:14}},
+      ce('div',{className:'section-title'},'Source Summary'),
+      ce('div',{className:'scroll-x'},
+        ce('table',null,
+          ce('thead',null,
+            ce('tr',null,
+              ce('th',{className:'left',style:{minWidth:140}},'Source'),
+              ce('th',null,'Total Leads'),
+              ce('th',{style:{background:'#166534'}},'Unique Leads'),
+              ce('th',{style:{background:'#C9A227',color:'#081C15'}},'Bookings'),
+              ce('th',{style:{background:'#166534'}},'E2B%'),
+              ce('th',{style:{background:'#7c2d12'}},'Duplicity%'),
+            )
+          ),
+          ce('tbody',null,
+            srcBreak.map(([src],i)=>{
+              const a=aggRE(rows.filter(r=>r.source===src),mf);
+              return ce('tr',{key:i},
+                ce('td',{className:'label'},src),
+                ce('td',null,Nf(a.totalLeads)),
+                ce('td',{style:{color:'#166534',fontWeight:700}},Nf(a.uniqueLeads)),
+                ce('td',{style:{color:'#C9A227',fontWeight:700}},Nf(a.bookings)),
+                ce('td',null,e2bBadge(a.e2bPct)),
+                ce('td',null,dupBadge(a.dupPct)),
+              );
+            }),
+            ce('tr',{className:'total-row'},
+              ce('td',{className:'label',style:{background:'#081C15',color:'#A8D5BA'}},'∑ Grand Total'),
+              ce('td',null,Nf(m.totalLeads)),
+              ce('td',{style:{color:'#86efac',fontWeight:700}},Nf(m.uniqueLeads)),
+              ce('td',{style:{color:'#fbbf24',fontWeight:700}},Nf(m.bookings)),
+              ce('td',null,ce('span',{style:{color:'#86efac',fontWeight:700}},m.e2bPct.toFixed(1)+'%')),
+              ce('td',null,ce('span',{style:{color:'#fbbf24',fontWeight:700}},m.dupPct.toFixed(1)+'%')),
+            )
+          )
+        )
+      )
+    ),
+
+    /* Insights */
+    ce('div',{style:{marginTop:4}},
+      ce('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+        ce('div',{style:{width:4,height:18,background:'#2D6A4F',borderRadius:2}}),
+        ce('span',{style:{fontSize:13,fontWeight:800,color:'#1B4332',letterSpacing:'-.02em'}},'💡 Performance Insights'),
+        ce('span',{style:{fontSize:10,color:'#2D6A4F',background:'#D8EED8',padding:'2px 10px',borderRadius:20,fontWeight:600}},'Based on E2B% · Min 5 unique leads threshold')
+      ),
+
+      ce('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}},
+        /* Worst Source */
+        ce('div',{className:'card',style:{padding:'14px 18px',borderLeft:'4px solid #dc2626'}},
+          ce('div',{style:{fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em',color:'#dc2626',marginBottom:8}},'❶  Worst Performing Source'),
+          insights.worstSrc
+            ?ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}},
+                ce('div',null,
+                  ce('div',{style:{fontSize:18,fontWeight:800,color:'#111827'}},insights.worstSrc.src),
+                  ce('div',{style:{fontSize:11,color:'#6b7280',marginTop:2}},Nf(insights.worstSrc.total.uniqueLeads)+' unique leads')
+                ),
+                ce('div',{style:{textAlign:'right'}},
+                  ce('div',{style:{fontSize:26,fontWeight:900,color:'#dc2626',fontFamily:'DM Mono'}},insights.worstSrc.total.e2bPct.toFixed(1)+'%'),
+                  ce('div',{style:{fontSize:9,color:'#dc2626',fontWeight:700,letterSpacing:'.05em'}},'E2B%')
+                )
+              )
+            :ce('span',{style:{color:'#9ca3af',fontSize:11}},'Insufficient data')
+        ),
+        /* Best Source */
+        ce('div',{className:'card',style:{padding:'14px 18px',borderLeft:'4px solid #16a34a'}},
+          ce('div',{style:{fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em',color:'#16a34a',marginBottom:8}},'⑤  Top Performing Source'),
+          insights.bestSrc
+            ?ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}},
+                ce('div',null,
+                  ce('div',{style:{fontSize:18,fontWeight:800,color:'#111827'}},insights.bestSrc.src),
+                  ce('div',{style:{fontSize:11,color:'#6b7280',marginTop:2}},Nf(insights.bestSrc.total.uniqueLeads)+' unique leads')
+                ),
+                ce('div',{style:{textAlign:'right'}},
+                  ce('div',{style:{fontSize:26,fontWeight:900,color:'#16a34a',fontFamily:'DM Mono'}},insights.bestSrc.total.e2bPct.toFixed(1)+'%'),
+                  ce('div',{style:{fontSize:9,color:'#16a34a',fontWeight:700,letterSpacing:'.05em'}},'E2B%')
+                )
+              )
+            :ce('span',{style:{color:'#9ca3af',fontSize:11}},'Insufficient data')
+        ),
+        /* Highest Dup Source */
+        ce('div',{className:'card',style:{padding:'14px 18px',borderLeft:'4px solid #d97706'}},
+          ce('div',{style:{fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em',color:'#d97706',marginBottom:8}},'⚠  Highest Source Duplicity'),
+          insights.highDupSrc
+            ?ce('div',null,
+                ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}},
+                  ce('div',null,
+                    ce('div',{style:{fontSize:18,fontWeight:800,color:'#111827'}},insights.highDupSrc.src),
+                    ce('div',{style:{fontSize:11,color:'#6b7280',marginTop:2}},Nf(insights.highDupSrc.total.totalLeads)+' total · '+Nf(insights.highDupSrc.total.dupLeads)+' dups')
+                  ),
+                  ce('div',{style:{textAlign:'right'}},
+                    ce('div',{style:{fontSize:26,fontWeight:900,color:'#d97706',fontFamily:'DM Mono'}},insights.highDupSrc.total.dupPct.toFixed(1)+'%'),
+                    ce('div',{style:{fontSize:9,color:'#d97706',fontWeight:700,letterSpacing:'.05em'}},'DUPLICITY%')
+                  )
+                )
+              )
+            :ce('span',{style:{color:'#9ca3af',fontSize:11}},'Insufficient data')
+        )
+      ),
+
+      /* Worst LT vs Best LT per source */
+      ce('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}},
+        ce('div',{className:'card',style:{padding:'14px 18px',borderLeft:'4px solid #dc2626'}},
+          ce('div',{style:{fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em',color:'#dc2626',marginBottom:10}},'❷  Worst Performing LT — by Source'),
+          ce('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:11}},
+            ce('thead',null,ce('tr',null,
+              ce('th',{style:{background:'#081C15',color:'#fff',padding:'5px 8px',textAlign:'left',fontSize:9,fontWeight:700,letterSpacing:'.06em'}},'Source'),
+              ce('th',{style:{background:'#081C15',color:'#fff',padding:'5px 8px',textAlign:'center',fontSize:9,fontWeight:700,letterSpacing:'.06em'}},'LT'),
+              ce('th',{style:{background:'#081C15',color:'#fff',padding:'5px 8px',textAlign:'right',fontSize:9,fontWeight:700,letterSpacing:'.06em'}},'Unique'),
+              ce('th',{style:{background:'#081C15',color:'#fff',padding:'5px 8px',textAlign:'right',fontSize:9,fontWeight:700,letterSpacing:'.06em'}},'E2B%'),
+            )),
+            ce('tbody',null,
+              insights.srcs.map((s,i)=>{
+                const e=insights.bySrc[s]?.worstLT;
+                return ce('tr',{key:s,style:{background:i%2===0?'#fff':'#F0F7F4'}},
+                  ce('td',{style:{padding:'5px 8px',fontWeight:600,color:'#0a1f14',borderBottom:'1px solid #D8EED8'}},s),
+                  ce('td',{style:{padding:'5px 8px',textAlign:'center',fontFamily:'DM Mono',color:'#dc2626',fontWeight:700,borderBottom:'1px solid #D8EED8'}},e?e.lt:'—'),
+                  ce('td',{style:{padding:'5px 8px',textAlign:'right',fontFamily:'DM Mono',borderBottom:'1px solid #D8EED8'}},e?Nf(e.m.uniqueLeads):'—'),
+                  ce('td',{style:{padding:'5px 8px',textAlign:'right',fontFamily:'DM Mono',fontWeight:700,color:e?'#dc2626':'#9ca3af',borderBottom:'1px solid #D8EED8'}},e?e.m.e2bPct.toFixed(1)+'%':'—'),
+                );
+              })
+            )
+          )
+        ),
+        ce('div',{className:'card',style:{padding:'14px 18px',borderLeft:'4px solid #16a34a'}},
+          ce('div',{style:{fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em',color:'#16a34a',marginBottom:10}},'④  Top Performing LT — by Source'),
+          ce('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:11}},
+            ce('thead',null,ce('tr',null,
+              ce('th',{style:{background:'#081C15',color:'#fff',padding:'5px 8px',textAlign:'left',fontSize:9,fontWeight:700,letterSpacing:'.06em'}},'Source'),
+              ce('th',{style:{background:'#081C15',color:'#fff',padding:'5px 8px',textAlign:'center',fontSize:9,fontWeight:700,letterSpacing:'.06em'}},'LT'),
+              ce('th',{style:{background:'#081C15',color:'#fff',padding:'5px 8px',textAlign:'right',fontSize:9,fontWeight:700,letterSpacing:'.06em'}},'Unique'),
+              ce('th',{style:{background:'#081C15',color:'#fff',padding:'5px 8px',textAlign:'right',fontSize:9,fontWeight:700,letterSpacing:'.06em'}},'E2B%'),
+            )),
+            ce('tbody',null,
+              insights.srcs.map((s,i)=>{
+                const e=insights.bySrc[s]?.bestLT;
+                return ce('tr',{key:s,style:{background:i%2===0?'#fff':'#F0F7F4'}},
+                  ce('td',{style:{padding:'5px 8px',fontWeight:600,color:'#0a1f14',borderBottom:'1px solid #D8EED8'}},s),
+                  ce('td',{style:{padding:'5px 8px',textAlign:'center',fontFamily:'DM Mono',color:'#166534',fontWeight:700,borderBottom:'1px solid #D8EED8'}},e?e.lt:'—'),
+                  ce('td',{style:{padding:'5px 8px',textAlign:'right',fontFamily:'DM Mono',borderBottom:'1px solid #D8EED8'}},e?Nf(e.m.uniqueLeads):'—'),
+                  ce('td',{style:{padding:'5px 8px',textAlign:'right',fontFamily:'DM Mono',fontWeight:700,color:e?'#16a34a':'#9ca3af',borderBottom:'1px solid #D8EED8'}},e?e.m.e2bPct.toFixed(1)+'%':'—'),
+                );
+              })
+            )
+          )
+        )
+      )
+    )
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SOURCE ANALYSIS TAB
+══════════════════════════════════════════════════════════════════════════ */
+function SourceTab({rows,mf}){
+  const chartRef=useRef(); const chartInst=useRef();
+  const sources=useMemo(()=>[...new Set(rows.map(r=>r.source))].filter(Boolean).sort(),[rows]);
+  const tableData=useMemo(()=>sources.map(src=>({src,m:aggRE(rows.filter(r=>r.source===src),mf)})),[rows,sources,mf]);
+  const grand=useMemo(()=>aggRE(rows,mf),[rows,mf]);
+
+  useEffect(()=>{
+    const canvas=chartRef.current;
+    if(!canvas||!window.Chart) return;
+    if(chartInst.current) try{chartInst.current.destroy();}catch(e){}
+    const COLORS=['#2D6A4F','#1B4332','#40916C','#52B788','#74C69D'];
+    chartInst.current=new Chart(canvas,{
+      type:'bar',
+      data:{
+        labels:tableData.map(d=>d.src),
+        datasets:[
+          {label:'Unique Leads',data:tableData.map(d=>d.m.uniqueLeads),backgroundColor:tableData.map((_,i)=>COLORS[i%5]+'55'),borderColor:tableData.map((_,i)=>COLORS[i%5]),borderWidth:1.5,borderRadius:4,yAxisID:'y'},
+          {label:'Bookings',data:tableData.map(d=>d.m.bookings),backgroundColor:'#C9A22788',borderColor:'#C9A227',borderWidth:1.5,borderRadius:4,yAxisID:'y'},
+          {label:'E2B %',data:tableData.map(d=>parseFloat(d.m.e2bPct.toFixed(2))),type:'line',borderColor:'#081C15',backgroundColor:'transparent',borderWidth:2,pointRadius:5,pointBackgroundColor:'#081C15',yAxisID:'y2',tension:.3},
+        ]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{
+          legend:{position:'top',labels:{boxWidth:10,boxHeight:10,font:{size:10,family:'DM Mono,monospace'},color:'#475569'}},
+          tooltip:{backgroundColor:'rgba(8,28,21,.92)',titleColor:'#f0f7f4',bodyColor:'#A8D5BA',padding:10,cornerRadius:8},
+          datalabels:{display:false}
+        },
+        scales:{
+          x:{grid:{color:'rgba(100,116,139,.1)'},ticks:{color:'#475569',font:{size:11}}},
+          y:{grid:{color:'rgba(100,116,139,.1)'},ticks:{color:'#475569',font:{size:10}},position:'left',title:{display:true,text:'Leads',color:'#94a3b8',font:{size:9}},beginAtZero:true},
+          y2:{position:'right',ticks:{color:'#2D6A4F',font:{size:10},callback:v=>v+'%'},grid:{display:false},title:{display:true,text:'E2B%',color:'#2D6A4F',font:{size:9}},beginAtZero:true}
+        }
+      }
+    });
+    return()=>{try{if(chartInst.current)chartInst.current.destroy();}catch(e){}};
+  },[tableData]);
+
+  return ce('div',{className:'fade-up'},
+    ce('div',{className:'card',style:{padding:'16px 18px',marginBottom:14}},
+      ce('div',{className:'section-title'},'Source Performance — Unique Leads & E2B%'),
+      ce('div',{style:{height:260,position:'relative'}},ce('canvas',{ref:chartRef}))
+    ),
+    ce('div',{className:'card',style:{padding:0,overflow:'hidden'}},
+      ce('div',{style:{padding:'12px 18px',borderBottom:'1px solid #e4e6ef'}},
+        ce('span',{style:{fontSize:11,fontWeight:700,color:'#1B4332'}},'Source-wise Disposition Table')
+      ),
+      ce('div',{className:'scroll-x'},
+        ce('table',null,
+          ce('thead',null,ce('tr',null,
+            ce('th',{className:'left',style:{minWidth:150,position:'sticky',top:0,left:0,zIndex:4,background:'#081C15'}},'Source'),
+            ce('th',null,'Total Leads'),
+            ce('th',{style:{background:'#166534'}},'Unique Leads'),
+            ce('th',{style:{background:'#C9A227',color:'#081C15'}},'Bookings'),
+            ce('th',{style:{background:'#166534'}},'E2B%'),
+            ce('th',{style:{background:'#7c2d12'}},'Duplicity%'),
+          )),
+          ce('tbody',null,
+            tableData.map((d,i)=>ce('tr',{key:i},
+              ce('td',{className:'label'},d.src),
+              ce('td',null,Nf(d.m.totalLeads)),
+              ce('td',{style:{color:'#166534',fontWeight:700}},Nf(d.m.uniqueLeads)),
+              ce('td',{style:{color:'#C9A227',fontWeight:700}},Nf(d.m.bookings)),
+              ce('td',null,e2bBadge(d.m.e2bPct)),
+              ce('td',null,dupBadge(d.m.dupPct)),
+            )),
+            ce('tr',{className:'total-row'},
+              ce('td',{className:'label',style:{background:'#081C15',color:'#A8D5BA'}},'∑ Grand Total'),
+              ce('td',null,Nf(grand.totalLeads)),
+              ce('td',{style:{color:'#86efac',fontWeight:700}},Nf(grand.uniqueLeads)),
+              ce('td',{style:{color:'#fbbf24',fontWeight:700}},Nf(grand.bookings)),
+              ce('td',null,ce('span',{style:{color:'#86efac',fontWeight:700}},grand.e2bPct.toFixed(1)+'%')),
+              ce('td',null,ce('span',{style:{color:'#fbbf24',fontWeight:700}},grand.dupPct.toFixed(1)+'%')),
+            )
+          )
+        )
+      )
+    )
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CROSS-TAB COMPONENT (shared by LT×Source and PrimarySource×Source)
+══════════════════════════════════════════════════════════════════════════ */
+function CrossTab({rows,mf,rowKey,rowLabel,rowSort,limit=60}){
+  const [showAll,setShowAll]=useState(false);
+  const [sortSrc,setSortSrc]=useState('__total__');
+  const [sortCol,setSortCol]=useState('uniqueLeads');
+  const [sortDir,setSortDir]=useState('desc');
+
+  const sources=useMemo(()=>[...new Set(rows.map(r=>r.source))].filter(Boolean).sort(),[rows]);
+  const rowVals=useMemo(()=>[...new Set(rows.map(r=>r[rowKey]))].filter(Boolean),[rows,rowKey]);
+
+  /* Pre-group by (rowVal, source) for performance */
+  const cellMap=useMemo(()=>{
+    const m={};
+    for(const r of rows){
+      const rk=r[rowKey]||'Unknown';
+      const sk=r.source||'Unknown';
+      const key=rk+'|||'+sk;
+      if(!m[key]) m[key]=[];
+      m[key].push(r);
+    }
+    return m;
+  },[rows,rowKey]);
+
+  const rowMap=useMemo(()=>{
+    const m={};
+    for(const r of rows){
+      const rk=r[rowKey]||'Unknown';
+      if(!m[rk]) m[rk]=[];
+      m[rk].push(r);
+    }
+    return m;
+  },[rows,rowKey]);
+
+  const srcMap=useMemo(()=>{
+    const m={};
+    for(const src of sources) m[src]=rows.filter(r=>r.source===src);
+    return m;
+  },[rows,sources]);
+
+  const COL_OPTIONS=[
+    {val:'uniqueLeads',label:'Unique Leads'},
+    {val:'bookings',label:'Bookings'},
+    {val:'e2bPct',label:'E2B %'},
+    {val:'dupPct',label:'Dup %'},
+  ];
+
+  const getMetric=(a,col)=>{
+    switch(col){case'uniqueLeads':return a.uniqueLeads;case'bookings':return a.bookings;case'e2bPct':return a.e2bPct;case'dupPct':return a.dupPct;default:return a.uniqueLeads;}
+  };
+
+  const sortedRows=useMemo(()=>[...rowVals].sort((a,b)=>{
+    const mA=sortSrc==='__total__'?aggRE(rowMap[a]||[],mf):aggRE(cellMap[a+'|||'+sortSrc]||[],mf);
+    const mB=sortSrc==='__total__'?aggRE(rowMap[b]||[],mf):aggRE(cellMap[b+'|||'+sortSrc]||[],mf);
+    const vA=getMetric(mA,sortCol);
+    const vB=getMetric(mB,sortCol);
+    return sortDir==='desc'?vB-vA:vA-vB;
+  }),[rowVals,rowMap,cellMap,sortSrc,sortCol,sortDir,mf]);
+
+  const displayRows=showAll?sortedRows:sortedRows.slice(0,limit);
+  const grand=useMemo(()=>aggRE(rows,mf),[rows,mf]);
+  const srcTotals=useMemo(()=>{const t={};for(const s of sources)t[s]=aggRE(srcMap[s]||[],mf);return t;},[srcMap,sources,mf]);
+
+  const SRC_BG=['#1B4332','#1e40af','#166534','#5B21B6','#0e4a6e','#374151'];
+  const NCOLS=4;
+  const totalCols=1+(1+sources.length)*NCOLS;
+
+  const TH={padding:'6px 4px',fontWeight:700,fontSize:9,textTransform:'uppercase',letterSpacing:'.05em',color:'#fff',background:'#081C15',textAlign:'center',border:'1px solid rgba(255,255,255,.12)',whiteSpace:'nowrap',position:'sticky',top:0,zIndex:2};
+  const THS={...TH,background:'#1B4332',fontSize:8,color:'#A8D5BA',position:'sticky',top:30,zIndex:1,padding:'4px 4px'};
+  const TD={padding:'4px 6px',border:'1px solid #D8EED8',fontSize:10,textAlign:'center',fontFamily:'DM Mono,monospace',verticalAlign:'middle'};
+  const TDL={...TD,textAlign:'left',fontFamily:'inherit',fontWeight:600,color:'#0a1f14',background:'#fff',position:'sticky',left:0,zIndex:1,borderRight:'2px solid #A8D5BA'};
+  const TDT={...TD,background:'#081C15',color:'#f0f7f4',fontWeight:700};
+  const TDTl={...TDT,textAlign:'left',fontFamily:'inherit',color:'#A8D5BA',borderRight:'2px solid #1B4332'};
+
+  const SUB=['Unique','Books','E2B%','Dup%'];
+  const SUB_C=['#A8D5BA','#fbbf24','#86efac','#c4b5fd'];
+
+  function mk(a,pfx,dark=false,bg='#fff'){
+    const b={...TD,background:dark?'#081C15':bg};
+    const tc=dark?'#f0f7f4':'#111827';
+    return[
+      ce('td',{key:pfx+'u',style:{...b,color:tc,fontWeight:700,borderLeft:'2px solid rgba(0,0,0,.06)'}},a.uniqueLeads?Nf(a.uniqueLeads):'—'),
+      ce('td',{key:pfx+'b',style:{...b,color:dark?'#fbbf24':tc,fontWeight:a.bookings?700:400}},a.bookings?Nf(a.bookings):'—'),
+      ce('td',{key:pfx+'e',style:{...b,color:dark?'#86efac':(a.uniqueLeads>0?tc:'#9ca3af')}},a.uniqueLeads>0?a.e2bPct.toFixed(1)+'%':'—'),
+      ce('td',{key:pfx+'d',style:{...b,color:dark?'#c4b5fd':(a.totalLeads>0?tc:'#9ca3af')}},a.totalLeads>0?a.dupPct.toFixed(1)+'%':'—'),
+    ];
+  }
+
+  const ddStyle={padding:'4px 10px',fontSize:10,fontFamily:'inherit',fontWeight:600,border:'1px solid #A8D5BA',borderRadius:8,background:'#fff',color:'#1B4332',cursor:'pointer',outline:'none'};
+
+  return ce('div',{className:'fade-up'},
+    ce('div',{style:{marginBottom:10,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+      ce('span',{style:{fontSize:11,fontWeight:700,color:'#1B4332'}},rowLabel+' — Disposition Cross-tab'),
+      ce('span',{style:{fontSize:10,color:'#2D6A4F'}},'∑ Total first · '+sortedRows.length+' rows · Grand Total at bottom'),
+      ce('div',{style:{marginLeft:'auto',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}),
+      ce('span',{style:{fontSize:9,color:'#1B4332',fontWeight:600}},'Sort by:'),
+      ce('select',{value:sortSrc,onChange:e=>setSortSrc(e.target.value),style:ddStyle},
+        ce('option',{value:'__total__'},'∑ Total'),
+        sources.map(s=>ce('option',{key:s,value:s},s))
+      ),
+      ce('select',{value:sortCol,onChange:e=>setSortCol(e.target.value),style:ddStyle},
+        COL_OPTIONS.map(o=>ce('option',{key:o.val,value:o.val},o.label))
+      ),
+      ce('select',{value:sortDir,onChange:e=>setSortDir(e.target.value),style:ddStyle},
+        ce('option',{value:'desc'},'▼ High → Low'),
+        ce('option',{value:'asc'},'▲ Low → High')
+      )
+    ),
+    ce('div',{className:'card',style:{padding:0,overflow:'hidden'}},
+      ce('table',{style:{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}},
+        ce('thead',null,
+          ce('tr',null,
+            ce('th',{rowSpan:2,style:{...TH,width:'8%',textAlign:'left',position:'sticky',left:0,zIndex:4,background:'#081C15'}},rowLabel.split('×')[0].trim()),
+            ce('th',{colSpan:NCOLS,style:{...TH,background:'#1B4332',borderLeft:'2px solid rgba(255,255,255,.3)',borderRight:'2px solid rgba(255,255,255,.3)'}},'∑ Total'),
+            sources.map((s,i)=>ce('th',{key:s,colSpan:NCOLS,style:{...TH,background:SRC_BG[i%6],borderLeft:'2px solid rgba(255,255,255,.25)',borderRight:'2px solid rgba(255,255,255,.25)'}},s))
+          ),
+          ce('tr',null,
+            SUB.map((s,i)=>ce('th',{key:'t'+i,style:{...THS,color:SUB_C[i]}},s)),
+            sources.flatMap(src=>SUB.map((s,i)=>ce('th',{key:src+i,style:{...THS,color:SUB_C[i]}},s)))
+          )
+        ),
+        ce('tbody',null,
+          /* Grand total first */
+          ce('tr',{className:'total-row'},
+            ce('td',{style:{...TDTl,fontSize:10,padding:'4px 6px'}},'∑ Grand Total'),
+            mk(grand,'GT_T_',true),
+            sources.map(src=>mk(srcTotals[src]||aggRE([],mf),'GT_'+src+'_',true))
+          ),
+          ce('tr',{key:'div'},ce('td',{colSpan:totalCols,style:{padding:0,background:'#1B4332',height:2}})),
+
+          displayRows.map((rv,ri)=>{
+            const rowData=rowMap[rv]||[];
+            const rowTot=aggRE(rowData,mf);
+            return ce('tr',{key:rv,style:{background:ri%2===0?'#fff':'#F0F7F4'}},
+              ce('td',{style:{...TDL,fontSize:10,padding:'3px 6px',color:'#1B4332',background:ri%2===0?'#fff':'#F0F7F4'}},rv),
+              mk(rowTot,rv+'_T_',false,'#F0F7F4'),
+              sources.map(src=>{
+                const cellRows=cellMap[rv+'|||'+src]||[];
+                return mk(aggRE(cellRows,mf),rv+'_'+src+'_',false,'#fff');
+              })
+            );
+          }),
+
+          sortedRows.length>limit&&!showAll&&
+            ce('tr',{key:'more'},
+              ce('td',{colSpan:totalCols,style:{textAlign:'center',padding:'10px',background:'#F0F7F4'}},
+                ce('button',{onClick:()=>setShowAll(true),
+                  style:{padding:'5px 20px',border:'1px solid #A8D5BA',borderRadius:20,background:'#fff',cursor:'pointer',fontSize:11,color:'#2D6A4F',fontFamily:'inherit'}},
+                  'Show all '+(sortedRows.length-limit)+' more rows ▾')
+              )
+            )
+        )
+      )
+    )
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   UPLOAD SCREEN
+══════════════════════════════════════════════════════════════════════════ */
+function UploadScreen({onData,onSync,syncing,syncErr,sheetUrl,setSheetUrl,urlDraft,setUrlDraft,lastSynced}){
+  const [drag,setDrag]=useState(false);
+  const [prog,setProg]=useState(0);
+  const [step,setStep]=useState('');
+  const [err,setErr]=useState('');
+
+  function process(file){
+    if(!file||!file.name.match(/\.xlsx?$/i)){setErr('Please upload an .xlsx file');return;}
+    if(!window.XLSX){setErr('XLSX library not loaded');return;}
+    setErr('');setProg(10);setStep('Reading file…');
+    const reader=new FileReader();
+    reader.onerror=()=>{setErr('File read error');setProg(0);};
+    reader.onload=e=>{
+      try{
+        setProg(30);setStep('Parsing Excel…');
+        const wb=window.XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        setProg(55);setStep('Processing rows…');
+        const raw=window.XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+        if(!raw.length){setErr('Sheet appears empty');setProg(0);return;}
+        setTimeout(()=>{
+          setProg(80);setStep('Aggregating data…');
+          setTimeout(()=>{
+            const parsed=parseRows(raw);
+            if(!parsed.length){setErr('No valid rows found. Check the file format.');setProg(0);return;}
+            setProg(100);setStep('Done!');
+            try{localStorage.setItem('re_ldr_data',JSON.stringify(parsed.slice(0,50000)));}catch(e){}
+            setTimeout(()=>onData(parsed),400);
+          },50);
+        },50);
+      }catch(ex){setErr('Parse error: '+ex.message);setProg(0);}
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  return ce('div',{style:{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:24}},
+    ce('div',{style:{maxWidth:560,width:'100%'}},
+      ce('div',{style:{textAlign:'center',marginBottom:32}},
+        ce('div',{style:{display:'inline-flex',alignItems:'center',gap:12,background:'#2D6A4F',padding:'12px 28px',borderRadius:16,marginBottom:16,boxShadow:'0 4px 20px rgba(45,106,79,.35)'}},
+          ce('div',{style:{width:38,height:38,borderRadius:9,background:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:900,color:'#2D6A4F'}},'RE'),
+          ce('div',{style:{textAlign:'left'}},
+            ce('div',{style:{fontSize:15,fontWeight:800,color:'#fff',letterSpacing:'-.02em'}},'Royal Enfield'),
+            ce('div',{style:{fontSize:10,color:'#D8EED8',letterSpacing:'.06em',fontWeight:600}},'LEAD DISPOSITION DASHBOARD  v1.0')
+          )
+        ),
+        ce('div',{style:{fontSize:12,color:'#1B4332',fontWeight:500}},'Upload a BikeDekho LDR Excel file or sync from Google Sheets')
+      ),
+
+      ce('div',{
+        className:'drop-zone'+(drag?' drag':''),
+        style:{padding:'48px 24px',textAlign:'center',marginBottom:16},
+        onDragOver:e=>{e.preventDefault();setDrag(true);},
+        onDragLeave:()=>setDrag(false),
+        onDrop:e=>{e.preventDefault();setDrag(false);process(e.dataTransfer.files[0]);},
+        onClick:()=>document.getElementById('re-ldr-file').click()
+      },
+        ce('div',{style:{fontSize:36,marginBottom:12}},'📂'),
+        ce('div',{style:{fontSize:14,fontWeight:600,color:'#111827',marginBottom:4}},'Click or drag & drop LDR file'),
+        ce('div',{style:{fontSize:11,color:'#9ca3af'}},'.xlsx files only · BikeDekho Lead Disposition Report'),
+        ce('input',{id:'re-ldr-file',type:'file',accept:'.xlsx,.xls',style:{display:'none'},onChange:e=>process(e.target.files[0])})
+      ),
+
+      prog>0&&ce('div',{style:{marginBottom:12}},
+        ce('div',{style:{fontSize:11,color:'#374151',marginBottom:6,fontWeight:600}},step),
+        ce('div',{style:{height:5,background:'#f0f2f7',borderRadius:10,overflow:'hidden'}},
+          ce('div',{className:'prog-fill',style:{height:'100%',width:prog+'%',borderRadius:10}})
+        )
+      ),
+      err&&ce('div',{style:{padding:'10px 14px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:8,fontSize:11,color:'#dc2626',fontWeight:500}},err),
+
+      ce('div',{className:'card',style:{padding:'18px',marginTop:16,borderLeft:'4px solid #2D6A4F'}},
+        ce('div',{style:{fontSize:11,fontWeight:700,color:'#1B4332',marginBottom:12,display:'flex',alignItems:'center',gap:8}},'📊 Or sync directly from Google Sheets'),
+        ce('div',{style:{marginBottom:12}},
+          ce('div',{style:{fontSize:10,fontWeight:700,color:'#1B4332',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:4}},'Google Sheets URL'),
+          ce('input',{type:'text',value:urlDraft||'',onChange:e=>setUrlDraft&&setUrlDraft(e.target.value),
+            placeholder:'https://docs.google.com/spreadsheets/d/…',
+            style:{width:'100%',padding:'7px 14px',border:'1px solid #A8D5BA',borderRadius:10,fontSize:11,fontFamily:'inherit',outline:'none',background:'#fff',color:'#0a1f14'}
+          })
+        ),
+        ce('button',{
+          onClick:()=>{const u=(urlDraft||'').trim();if(!u)return;if(setSheetUrl)setSheetUrl(u);try{localStorage.setItem('re_ldr_sheet_url',u);}catch(e){}if(onSync)onSync(u);},
+          disabled:syncing,
+          style:{padding:'8px 24px',background:'#2D6A4F',border:'none',borderRadius:20,color:'#fff',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}
+        },
+          syncing?ce('span',{style:{display:'inline-block',animation:'spin .8s linear infinite'}},'⟳'):'📊',
+          syncing?'Syncing…':'Sync from Google Sheets'
+        ),
+        syncErr&&ce('div',{style:{fontSize:11,color:'#dc2626',padding:'8px 12px',background:'#fef2f2',borderRadius:8,border:'1px solid #fecaca',marginTop:10,whiteSpace:'pre-wrap'}},'⚠ '+syncErr),
+        lastSynced&&ce('div',{style:{fontSize:10,color:'#166534',marginTop:8}},'✓ Last synced: '+lastSynced.toLocaleString()),
+        ce('div',{style:{fontSize:10,color:'#6b7280',marginTop:10,lineHeight:1.6}},
+          '💡 Share first: Google Sheets → File → Share → Anyone with the link → ',
+          ce('strong',null,'Viewer'),
+          ' · No API key · No login required')
+      ),
+
+      ce('div',{className:'card',style:{padding:'14px 18px',marginTop:16}},
+        ce('div',{style:{fontSize:10,fontWeight:700,color:'#6b7280',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:8}},'Expected columns in LDR file'),
+        ce('div',{style:{display:'flex',flexWrap:'wrap',gap:4}},
+          ['Lead Number','LT','Source','Primary Source','Duplicate Check','Lead Month','Booking Status','Booking Date','Booking Month'].map(c=>
+            ce('span',{key:c,style:{fontSize:10,fontFamily:'DM Mono',background:'#f5f6fa',border:'1px solid #e4e6ef',borderRadius:5,padding:'2px 7px',color:'#6b7280'}},c)
+          )
+        )
+      )
+    )
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MAIN APP
+══════════════════════════════════════════════════════════════════════════ */
+const TABS=[
+  {id:'overview',  label:'Overview'},
+  {id:'source',    label:'Source Analysis'},
+  {id:'ltxsrc',   label:'LT × Source'},
+  {id:'primxsrc', label:'Primary Source × Source'},
+];
+
+function App(){
+  const [rows,setRows]=useState(null);
+  const [tab,setTab]=useState('overview');
+  const [filters,setFilters]=useState({month:'All',source:'All',primarySrc:'All'});
+  const [syncing,setSyncing]=useState(false);
+  const [syncErr,setSyncErr]=useState(null);
+  const [lastSynced,setLastSynced]=useState(null);
+  const [showSyncPanel,setShowSyncPanel]=useState(false);
+  const [sheetUrl,setSheetUrl]=useState(()=>localStorage.getItem('re_ldr_sheet_url')||SHEETS_CONFIG.LDR_SHEET_URL||'');
+  const [urlDraft,setUrlDraft]=useState('');
+
+  const handleSync=useCallback(async(url)=>{
+    const u=(url||sheetUrl||SHEETS_CONFIG.LDR_SHEET_URL||'').trim();
+    if(!u){setShowSyncPanel(true);setSyncErr('Paste your Google Sheets URL and click Sync.');return;}
+    setSyncing(true);setSyncErr(null);
+    try{
+      const csv=await fetchSheetCsv(u);
+      const raw=parseCsvToRows(csv);
+      if(!raw.length) throw new Error('No rows found in sheet.');
+      const parsed=parseRows(raw);
+      if(!parsed.length) throw new Error('Rows found but none matched expected column format.');
+      try{localStorage.setItem('re_ldr_data',JSON.stringify(parsed.slice(0,50000)));}catch(e){}
+      setRows(parsed);
+      setLastSynced(new Date());
+      setShowSyncPanel(false);
+    }catch(e){setSyncErr(e.message);}
+    finally{setSyncing(false);}
+  },[sheetUrl]);
+
+  useEffect(()=>{
+    const u=sheetUrl||SHEETS_CONFIG.LDR_SHEET_URL;
+    if(SHEETS_CONFIG.AUTO_SYNC_ON_LOAD&&u) handleSync(u);
+  },[]);// eslint-disable-line
+
+  useEffect(()=>{
+    try{
+      const saved=localStorage.getItem('re_ldr_data');
+      if(saved){const p=JSON.parse(saved);if(p&&p.length)setRows(p);}
+    }catch(e){}
+  },[]);
+
+  const months=useMemo(()=>rows?[...new Set(rows.map(r=>r.lead_month))].filter(Boolean).sort((a,b)=>monthOrder(a)-monthOrder(b)):[], [rows]);
+  const sources=useMemo(()=>rows?[...new Set(rows.map(r=>r.source))].filter(Boolean).sort():[],[rows]);
+  const primSrcs=useMemo(()=>rows?[...new Set(rows.map(r=>r.primary_src))].filter(Boolean).sort():[],[rows]);
+
+  /* Base rows: filtered by source + primarySrc, NOT by month (month handled in aggRE) */
+  const baseRows=useMemo(()=>{
+    if(!rows) return [];
+    return rows.filter(r=>
+      (filters.source==='All'||r.source===filters.source)&&
+      (filters.primarySrc==='All'||r.primary_src===filters.primarySrc)
+    );
+  },[rows,filters.source,filters.primarySrc]);
+
+  const totalM=useMemo(()=>aggRE(baseRows,filters.month),[baseRows,filters.month]);
+
+  if(!rows) return ce(UploadScreen,{onData:setRows,onSync:handleSync,syncing,syncErr,sheetUrl,setSheetUrl,urlDraft,setUrlDraft,lastSynced});
+
+  return ce('div',{style:{minHeight:'100vh'}},
+    /* Header */
+    ce('div',{style:{background:'#2D6A4F',padding:'0 24px',position:'sticky',top:0,zIndex:100,boxShadow:'0 2px 16px rgba(45,106,79,.35)'}},
+      ce('div',{style:{maxWidth:1600,margin:'0 auto',display:'flex',alignItems:'center',gap:16}},
+        ce('div',{style:{display:'flex',alignItems:'center',gap:10,padding:'10px 0',flexShrink:0}},
+          ce('div',{style:{width:34,height:34,borderRadius:8,background:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:900,color:'#2D6A4F',boxShadow:'0 2px 8px rgba(0,0,0,.15)'}},'RE'),
+          ce('div',null,
+            ce('div',{style:{fontSize:13,fontWeight:800,color:'#fff',letterSpacing:'-.02em'}},'Royal Enfield · LDR'),
+            ce('div',{style:{fontSize:9,color:'#D8EED8',letterSpacing:'.07em',fontWeight:600}},'LEAD DISPOSITION DASHBOARD v1.0 · BikeDekho')
+          )
+        ),
+        ce('div',{style:{flex:1,display:'flex',gap:14,overflowX:'auto',padding:'8px 0',borderLeft:'1px solid rgba(255,255,255,.3)',paddingLeft:16,marginLeft:4}},
+          [
+            {l:'Total',  v:Nf(totalM.totalLeads)},
+            {l:'Unique', v:Nf(totalM.uniqueLeads)},
+            {l:'Dup%',   v:totalM.dupPct.toFixed(1)+'%'},
+            {l:'Bookings',v:Nf(totalM.bookings)},
+            {l:'E2B%',   v:totalM.e2bPct.toFixed(1)+'%'},
+          ].map((k,i)=>ce('div',{key:i,style:{flexShrink:0,textAlign:'center',minWidth:56}},
+            ce('div',{style:{fontSize:8,fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em',color:'#D8EED8'}},k.l),
+            ce('div',{style:{fontSize:13,fontWeight:800,color:'#fff',fontFamily:'DM Mono,monospace',letterSpacing:'-.02em'}},k.v)
+          ))
+        ),
+        ce('button',{onClick:()=>handleSync(),disabled:syncing,
+          style:{flexShrink:0,padding:'6px 16px',background:syncing?'rgba(255,255,255,.7)':'#fff',border:'none',borderRadius:20,color:'#1B4332',fontSize:10,cursor:syncing?'default':'pointer',fontFamily:'inherit',fontWeight:700,boxShadow:'0 2px 8px rgba(0,0,0,.12)',display:'flex',alignItems:'center',gap:5}},
+          syncing?ce('span',{style:{display:'inline-block',animation:'spin .8s linear infinite',fontSize:11}},'⟳'):'🔄',
+          syncing?'Syncing…':'Sync Sheets'
+        ),
+        ce('button',{onClick:()=>{setUrlDraft(sheetUrl);setShowSyncPanel(p=>!p);},title:'Configure Google Sheets URL',
+          style:{flexShrink:0,padding:'6px 10px',background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.3)',borderRadius:20,color:'#fff',fontSize:11,cursor:'pointer',fontFamily:'inherit'}},'⚙'),
+        ce('button',{
+          onClick:()=>{if(confirm('Clear data and upload new file?')){localStorage.removeItem('re_ldr_data');setRows(null);}},
+          style:{flexShrink:0,padding:'6px 16px',background:'transparent',border:'1px solid rgba(255,255,255,.3)',borderRadius:20,color:'#fff',fontSize:10,cursor:'pointer',fontFamily:'inherit',fontWeight:600}
+        },'⬆ File')
+      )
+    ),
+
+    /* Sync panel */
+    showSyncPanel&&ce('div',{style:{background:'#F0F7F4',borderBottom:'2px solid #A8D5BA',padding:'12px 24px',position:'sticky',top:54,zIndex:98,boxShadow:'0 4px 12px rgba(45,106,79,.1)'}},
+      ce('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+        ce('span',{style:{fontSize:10,fontWeight:700,color:'#1B4332',textTransform:'uppercase',letterSpacing:'.07em',whiteSpace:'nowrap'}},'📊 Google Sheets URL'),
+        ce('input',{type:'text',value:urlDraft,onChange:e=>setUrlDraft(e.target.value),
+          placeholder:'https://docs.google.com/spreadsheets/d/…',
+          style:{flex:1,minWidth:320,padding:'6px 14px',border:'1px solid #A8D5BA',borderRadius:20,fontSize:11,fontFamily:'inherit',outline:'none',background:'#fff',color:'#0a1f14'}
+        }),
+        ce('button',{
+          onClick:()=>{const u=urlDraft.trim();if(!u){setSyncErr('Please paste a Google Sheets URL.');return;}setSheetUrl(u);try{localStorage.setItem('re_ldr_sheet_url',u);}catch(e){}handleSync(u);},
+          disabled:syncing,
+          style:{padding:'6px 20px',background:'#2D6A4F',border:'none',borderRadius:20,color:'#fff',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}
+        },syncing?'⟳ Syncing…':'🔄 Sync Now'),
+        ce('button',{onClick:()=>{setShowSyncPanel(false);setSyncErr(null);},
+          style:{padding:'6px 12px',background:'transparent',border:'1px solid #A8D5BA',borderRadius:20,color:'#1B4332',fontSize:11,cursor:'pointer',fontFamily:'inherit'}},'✕')
+      ),
+      syncErr&&ce('div',{style:{marginTop:8,padding:'6px 12px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:8,fontSize:11,color:'#dc2626',fontWeight:500,whiteSpace:'pre-wrap'}},'⚠ '+syncErr),
+      lastSynced&&!syncErr&&ce('div',{style:{marginTop:6,fontSize:10,color:'#166534',fontFamily:'DM Mono'}},'✓ Last synced: '+lastSynced.toLocaleString()),
+      ce('div',{style:{marginTop:6,fontSize:10,color:'#1B4332'}},'💡 Share first: Google Sheets → File → Share → Anyone with the link → ',ce('strong',null,'Viewer'),' · No API key needed')
+    ),
+
+    /* Sync status bar */
+    !showSyncPanel&&(syncErr||lastSynced)&&ce('div',{
+      style:{background:syncErr?'#fef2f2':'#f0fdf4',borderBottom:'1px solid '+(syncErr?'#fecaca':'#bbf7d0'),padding:'5px 24px',display:'flex',alignItems:'center',gap:8,position:'sticky',top:54,zIndex:98}},
+      syncErr
+        ?ce('span',{style:{fontSize:10,color:'#dc2626',flex:1}},'⚠ Sync error: '+syncErr+' — ',ce('span',{style:{cursor:'pointer',textDecoration:'underline'},onClick:()=>{setUrlDraft(sheetUrl);setShowSyncPanel(true);}},'configure URL'))
+        :ce('span',{style:{fontSize:10,color:'#166534'}},'✓ Synced from Google Sheets · '+lastSynced.toLocaleString()+' · '+rows.length.toLocaleString()+' rows')
+    ),
+
+    /* Tab bar */
+    ce('div',{style:{background:'#fff',borderBottom:'2px solid #D8EED8',position:'sticky',top:54,zIndex:99,boxShadow:'0 2px 8px rgba(45,106,79,.08)'}},
+      ce('div',{style:{maxWidth:1600,margin:'0 auto',display:'flex',alignItems:'center',gap:0,padding:'0 24px'}},
+        TABS.map(t=>ce('button',{key:t.id,className:'tab-pill'+(tab===t.id?' active':''),onClick:()=>setTab(t.id)},t.label))
+      )
+    ),
+
+    /* Filter bar */
+    ce('div',{style:{maxWidth:1600,margin:'0 auto',padding:'14px 24px 0'}},
+      ce('div',{className:'filter-bar'},
+        ce('label',null,'Filters'),
+        ...[
+          {k:'month',     label:'Lead Month',     opts:['All',...months]},
+          {k:'source',    label:'Source',          opts:['All',...sources]},
+          {k:'primarySrc',label:'Primary Source',  opts:['All',...primSrcs]},
+        ].map(f=>ce('div',{key:f.k,style:{display:'flex',alignItems:'center',gap:5}},
+          ce('span',{style:{fontSize:10,color:'#64748b',fontWeight:600}},f.label+':'),
+          ce('select',{value:filters[f.k],onChange:e=>setFilters(p=>({...p,[f.k]:e.target.value}))},
+            f.opts.map(o=>ce('option',{key:o,value:o},o))
+          )
+        )),
+        (filters.month!=='All'||filters.source!=='All'||filters.primarySrc!=='All')&&
+          ce('button',{
+            onClick:()=>setFilters({month:'All',source:'All',primarySrc:'All'}),
+            style:{padding:'4px 12px',fontSize:10,background:'#D8EED8',border:'1px solid #A8D5BA',borderRadius:20,cursor:'pointer',fontFamily:'inherit',color:'#1B4332',fontWeight:600}
+          },'✕ Clear Filters'),
+        ce('span',{style:{marginLeft:'auto',fontSize:10,fontFamily:'DM Mono',color:'#94a3b8'}},
+          Nf(totalM.uniqueLeads)+' unique leads shown')
+      )
+    ),
+
+    /* Tab content */
+    ce('div',{style:{maxWidth:1600,margin:'0 auto',padding:'14px 24px 32px'}},
+      tab==='overview'  && ce(OverviewTab,    {rows:baseRows, mf:filters.month}),
+      tab==='source'    && ce(SourceTab,      {rows:baseRows, mf:filters.month}),
+      tab==='ltxsrc'   && ce(CrossTab,       {rows:baseRows, mf:filters.month, rowKey:'lt',          rowLabel:'LT × Source',             limit:60}),
+      tab==='primxsrc' && ce(CrossTab,       {rows:baseRows, mf:filters.month, rowKey:'primary_src', rowLabel:'Primary Source × Source',  limit:60}),
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(ce(App,null));
+</script>
+</body>
+</html>
