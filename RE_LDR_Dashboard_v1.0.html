@@ -758,8 +758,9 @@ function SourceTab({rows}){
 }
 
 /* ── Dimension × Source Monthly Grid (LT / Model / State) ─────────── */
-function renderMetricCells(a,keyPfx,bold){
+function renderMetricCells(a,keyPfx,bold,grandLeads){
   const fw=bold?700:600;
+  const contrib=grandLeads>0?(a.uniqueLeads/grandLeads*100):0;
   return[
     ce('td',{key:keyPfx+'u',style:{padding:'6px 8px',textAlign:'right',fontSize:11,fontWeight:fw,
       color:'#111827',fontFamily:'DM Mono,monospace',borderLeft:'2px solid rgba(0,0,0,.05)'}},
@@ -767,6 +768,9 @@ function renderMetricCells(a,keyPfx,bold){
     ce('td',{key:keyPfx+'b',style:{padding:'6px 8px',textAlign:'right',fontSize:11,fontWeight:fw,
       color:'#111827',fontFamily:'DM Mono,monospace'}},
       a.bookings?Nf(a.bookings):'—'),
+    ce('td',{key:keyPfx+'c',style:{padding:'6px 8px',textAlign:'right',fontSize:11,fontWeight:fw,
+      color:'#111827',fontFamily:'DM Mono,monospace'}},
+      grandLeads>0?contrib.toFixed(1)+'%':'—'),
     ce('td',{key:keyPfx+'e',style:{padding:'6px 8px',textAlign:'right',fontSize:11,fontWeight:fw,
       color:'#111827',fontFamily:'DM Mono,monospace'}},
       a.uniqueLeads>0?a.e2bPct.toFixed(1)+'%':'—'),
@@ -855,7 +859,7 @@ function DimMonthGrid({M,rows,rowKey,dimLabel}){
 
   const TH={padding:'6px 8px',fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',
     color:'#fff',textAlign:'center',border:'1px solid rgba(255,255,255,.12)',whiteSpace:'nowrap'};
-  const SUB=['Lead','Booking','E2B%'];
+  const SUB=['Lead','Booking','Contrib%','E2B%'];
 
   return ce('div',{style:{background:'#fff',border:'1px solid #E5E7EB',borderRadius:12,overflow:'hidden',marginBottom:16}},
     ce('div',{style:{padding:'10px 16px',background:'#F8FAFC',borderBottom:'1px solid #E5E7EB',
@@ -869,13 +873,13 @@ function DimMonthGrid({M,rows,rowKey,dimLabel}){
           ce('tr',{style:{background:'#1B4332'}},
             ce('th',{style:{...TH,textAlign:'left',minWidth:90,position:'sticky',left:0,background:'#1B4332',zIndex:2,
               borderRight:'2px solid rgba(255,255,255,.3)'}},dimLabel||rowKey.toUpperCase()),
-            ce('th',{colSpan:3,style:{...TH,borderLeft:'2px solid rgba(255,255,255,.3)'}},'∑ Total'),
+            ce('th',{colSpan:4,style:{...TH,borderLeft:'2px solid rgba(255,255,255,.3)'}},'∑ Total'),
             visCols.map(col=>col.type==='group'
-              ?ce('th',{key:'gh_'+col.name,colSpan:3,
+              ?ce('th',{key:'gh_'+col.name,colSpan:4,
                   style:{...TH,background:col.clr.bar,borderLeft:'2px solid rgba(255,255,255,.3)',cursor:'pointer'},
                   onClick:()=>toggleGrp(col.name)},
                 (expandedGrps.has(col.name)?'▼ ':'▶ ')+col.name)
-              :ce('th',{key:'sh_'+col.src,colSpan:3,
+              :ce('th',{key:'sh_'+col.src,colSpan:4,
                   style:{...TH,background:col.clr.bar+'bb',borderLeft:'1px solid rgba(255,255,255,.2)',fontSize:8}},
                 col.src)
             )
@@ -898,8 +902,11 @@ function DimMonthGrid({M,rows,rowKey,dimLabel}){
                 ce('span',{style:{display:'inline-block',padding:'2px 8px',borderRadius:20,
                   fontSize:10,fontWeight:700,background:'#D8EED8',color:'#1B4332'}},v)
               ),
-              renderMetricCells(tot,'R'+ri+'T'),
-              visCols.flatMap((col,ci)=>renderMetricCells(cellAggs[v]?.[col.key]||aggRE([],M),'R'+ri+'C'+ci))
+              renderMetricCells(tot,'R'+ri+'T',false,grand.uniqueLeads),
+              visCols.flatMap((col,ci)=>{
+                const colGrand=grandColAggs[col.key]||aggRE([],M);
+                return renderMetricCells(cellAggs[v]?.[col.key]||aggRE([],M),'R'+ri+'C'+ci,false,colGrand.uniqueLeads);
+              })
             );
           }),
           /* Grand Total at bottom */
@@ -907,8 +914,11 @@ function DimMonthGrid({M,rows,rowKey,dimLabel}){
             ce('td',{style:{padding:'8px 10px',fontSize:11,fontWeight:700,color:'#111827',
               position:'sticky',left:0,background:'#F8FAFC',zIndex:1,
               borderRight:'2px solid #D8EED8'}},'Grand Total'),
-            renderMetricCells(grand,'GT_T',true),
-            visCols.flatMap((col,ci)=>renderMetricCells(grandColAggs[col.key]||aggRE([],M),'GT_C'+ci,true))
+            renderMetricCells(grand,'GT_T',true,grand.uniqueLeads),
+            visCols.flatMap((col,ci)=>{
+              const colGrand=grandColAggs[col.key]||aggRE([],M);
+              return renderMetricCells(colGrand,'GT_C'+ci,true,colGrand.uniqueLeads);
+            })
           )
         )
       )
