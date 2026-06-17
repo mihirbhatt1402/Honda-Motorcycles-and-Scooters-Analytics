@@ -1183,13 +1183,13 @@ function App(){
       setRows(parsed);
       setLastSynced(new Date());
       setShowSyncPanel(false);
-    }catch(e){setSyncErr(e.message);}
+    }catch(e){setSyncErr(e.message);setShowSyncPanel(true);}
     finally{setSyncing(false);}
   },[sheetUrl]);
 
   useEffect(()=>{
     const u=sheetUrl||SHEETS_CONFIG.LDR_SHEET_URL;
-    if(SHEETS_CONFIG.AUTO_SYNC_ON_LOAD&&u) handleSync(u);
+    if(SHEETS_CONFIG.AUTO_SYNC_ON_LOAD&&u&&u!=='INJECT_SHEET_URL_HERE') handleSync(u);
   },[]);// eslint-disable-line
 
   useEffect(()=>{
