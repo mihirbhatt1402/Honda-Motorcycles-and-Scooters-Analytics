@@ -634,14 +634,18 @@ function l2rColor(pct){
 }
 
 const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLabel}){
-  const PAID_MBRS=SRC_GROUPS[0].members;
-  const ORG_MBRS=SRC_GROUPS[1].members;
+  const PAID_MBRS=SRC_GROUPS[0].members;   // ['MS FB','Adwords']
+  const ORG_MBRS=SRC_GROUPS[1].members;    // ['Organic','Non MS']
+  const ALL_SRCS=[...PAID_MBRS,...ORG_MBRS];
 
   const grand=useMemo(()=>aggRE(rows,M),[rows,M]);
-  const paidAll=useMemo(()=>rows.filter(r=>PAID_MBRS.includes(r.source)),[rows]);
-  const orgAll=useMemo(()=>rows.filter(r=>ORG_MBRS.includes(r.source)),[rows]);
-  const grandPaid=useMemo(()=>aggRE(paidAll,M),[paidAll,M]);
-  const grandOrg=useMemo(()=>aggRE(orgAll,M),[orgAll,M]);
+  const grandSrc=useMemo(()=>{
+    const r={};
+    ALL_SRCS.forEach(src=>{ r[src]=aggRE(rows.filter(x=>x.source===src),M); });
+    return r;
+  },[rows,M]);
+  const grandPaid=useMemo(()=>aggRE(rows.filter(r=>PAID_MBRS.includes(r.source)),M),[rows,M]);
+  const grandOrg=useMemo(()=>aggRE(rows.filter(r=>ORG_MBRS.includes(r.source)),M),[rows,M]);
 
   const dimRowsMap=useMemo(()=>{
     const m={};
@@ -652,11 +656,9 @@ const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLa
   const dimAggs=useMemo(()=>{
     const res={};
     for(const [v,vr] of Object.entries(dimRowsMap)){
-      res[v]={
-        total:aggRE(vr,M),
-        paid:aggRE(vr.filter(r=>PAID_MBRS.includes(r.source)),M),
-        org:aggRE(vr.filter(r=>ORG_MBRS.includes(r.source)),M),
-      };
+      const srcAgg={};
+      ALL_SRCS.forEach(src=>{ srcAgg[src]=aggRE(vr.filter(r=>r.source===src),M); });
+      res[v]={total:aggRE(vr,M),src:srcAgg};
     }
     return res;
   },[dimRowsMap,M]);
@@ -691,20 +693,29 @@ const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLa
 
   const thBase={padding:'6px 7px',fontSize:9,fontWeight:700,textTransform:'uppercase',
     letterSpacing:'.06em',textAlign:'center',border:'1px solid rgba(255,255,255,.18)',
-    whiteSpace:'nowrap',position:'sticky',top:0,zIndex:2,color:'#fff'};
+    whiteSpace:'nowrap',position:'sticky',top:0,zIndex:3,color:'#fff'};
+  const thSub2={padding:'5px 7px',fontSize:8,fontWeight:700,textTransform:'uppercase',
+    letterSpacing:'.05em',textAlign:'center',border:'1px solid rgba(255,255,255,.18)',
+    whiteSpace:'nowrap',position:'sticky',top:23,zIndex:2,color:'#fff'};
   const thSub={padding:'4px 6px',fontSize:8,fontWeight:600,textTransform:'uppercase',
     letterSpacing:'.05em',color:'#2B2B2B',background:'#F3F4F6',textAlign:'center',
-    border:'1px solid #E5E7EB',whiteSpace:'nowrap',position:'sticky',top:30,zIndex:1};
+    border:'1px solid #E5E7EB',whiteSpace:'nowrap',position:'sticky',top:44,zIndex:1};
   const lblStyle={padding:'5px 10px',fontSize:11,fontWeight:600,color:'#222',
     position:'sticky',left:0,zIndex:1,borderRight:'2px solid #D1D5DB',
     whiteSpace:'nowrap',textAlign:'left'};
 
-  const GROUPS=[
-    {label:'Total',           bg:'#58616A',pfx:'T',grnd:grand.uniqueLeads},
-    {label:'Paid',            bg:'#B46B42',pfx:'P',grnd:grandPaid.uniqueLeads},
-    {label:'Organic + Non MS',bg:'#5F8B6F',pfx:'O',grnd:grandOrg.uniqueLeads},
+  /* Top-level groups: Total (no children) | Paid (MS FB, Adwords) | Organic + Non MS (Organic, Non MS) */
+  const TOPGROUPS=[
+    {label:'Total',           bg:'#58616A',children:null},
+    {label:'Paid',            bg:'#B46B42',children:PAID_MBRS},
+    {label:'Organic + Non MS',bg:'#5F8B6F',children:ORG_MBRS},
   ];
   const SCOLS=['Leads','Retail','Contrib%','L2R%'];
+  /* flat column list: each col has {key,label,grand} — 'total' col + one per source */
+  const COLS=[
+    {key:'total',label:'Total',grandLeads:grand.uniqueLeads},
+    ...ALL_SRCS.map(src=>({key:src,label:src,grandLeads:grandSrc[src].uniqueLeads}))
+  ];
 
   return ce('div',{style:{background:'#fff',border:'1px solid #E5E7EB',borderRadius:12,
     overflow:'hidden',marginBottom:16}},
@@ -718,17 +729,30 @@ const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLa
     ce('div',{style:{overflowX:'auto'}},
       ce('table',{style:{borderCollapse:'collapse',fontSize:11,width:'100%'}},
         ce('thead',null,
+          /* Row 1: Total | Paid | Organic + Non MS */
           ce('tr',null,
-            ce('th',{rowSpan:2,style:{...thBase,textAlign:'left',minWidth:110,
+            ce('th',{rowSpan:3,style:{...thBase,textAlign:'left',minWidth:110,
               background:'#3C3C3C',position:'sticky',left:0,zIndex:4,
               borderRight:'2px solid rgba(255,255,255,.3)'}},dimLabel||rowKey.toUpperCase()),
-            ...GROUPS.map((g,gi)=>ce('th',{key:'gh'+gi,colSpan:4,style:{
-              ...thBase,background:g.bg,
-              borderLeft:gi>0?'2px solid rgba(255,255,255,.4)':undefined}},g.label))
+            ...TOPGROUPS.map((g,gi)=>ce('th',{key:'tg'+gi,
+              colSpan:(g.children?g.children.length:1)*4,
+              style:{...thBase,background:g.bg,
+                borderLeft:gi>0?'2px solid rgba(255,255,255,.4)':undefined}},g.label))
           ),
+          /* Row 2: (blank under Total) | MS FB | Adwords | Organic | Non MS */
           ce('tr',null,
-            ...GROUPS.flatMap((g,gi)=>SCOLS.map((s,si)=>ce('th',{key:g.pfx+si,style:{
-              ...thSub,borderLeft:si===0&&gi>0?'2px solid #D1D5DB':undefined}},s)))
+            ...TOPGROUPS.flatMap((g,gi)=>{
+              if(!g.children) return[ce('th',{key:'sg'+gi,colSpan:4,
+                style:{...thSub2,background:g.bg,opacity:.75}},'')];
+              return g.children.map((src,si)=>ce('th',{key:'sg'+gi+'_'+si,colSpan:4,
+                style:{...thSub2,background:g.bg,opacity:si%2===0?1:.8,
+                  borderLeft:si>0?'1px solid rgba(255,255,255,.3)':'2px solid rgba(255,255,255,.4)'}},src));
+            })
+          ),
+          /* Row 3: Leads | Retail | Contrib% | L2R% for every column */
+          ce('tr',null,
+            ...COLS.flatMap((col,ci)=>SCOLS.map((s,si)=>ce('th',{key:col.key+si,style:{
+              ...thSub,borderLeft:si===0?'2px solid #D1D5DB':undefined}},s)))
           )
         ),
         ce('tbody',null,
@@ -737,16 +761,18 @@ const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLa
             const bg=ri%2===0?'#FFFFFF':'#F8F8F6';
             return ce('tr',{key:v,style:{background:bg}},
               ce('td',{style:{...lblStyle,background:bg}},v),
-              ...mkCells(a.total,grand.uniqueLeads,v+'T_',bg),
-              ...mkCells(a.paid,grandPaid.uniqueLeads,v+'P_',bg),
-              ...mkCells(a.org,grandOrg.uniqueLeads,v+'O_',bg)
+              ...COLS.flatMap(col=>mkCells(
+                col.key==='total'?a.total:a.src[col.key],
+                col.grandLeads,v+col.key+'_',bg
+              ))
             );
           }),
           ce('tr',{key:'GT',style:{background:'#E9EDF2',borderTop:'2px solid #D1D5DB'}},
             ce('td',{style:{...lblStyle,background:'#E9EDF2',fontWeight:700,color:'#333'}},'∑ Grand Total'),
-            ...mkCells(grand,grand.uniqueLeads,'GT_T_','#E9EDF2'),
-            ...mkCells(grandPaid,grandPaid.uniqueLeads,'GT_P_','#E9EDF2'),
-            ...mkCells(grandOrg,grandOrg.uniqueLeads,'GT_O_','#E9EDF2')
+            ...COLS.flatMap(col=>mkCells(
+              col.key==='total'?grand:grandSrc[col.key],
+              col.grandLeads,'GT_'+col.key+'_','#E9EDF2'
+            ))
           )
         )
       )
