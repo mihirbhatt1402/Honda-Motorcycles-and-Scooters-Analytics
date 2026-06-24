@@ -214,6 +214,27 @@ function aggRE(rows,mf){
   return{totalLeads,uniqueLeads,dupLeads,dupPct,bookings,e2bPct};
 }
 
+/* Aggregate across an arbitrary set of selected months (used by mini-charts) */
+function aggMulti(rows,months){
+  if(!months||!months.length) return{totalLeads:0,uniqueLeads:0,dupLeads:0,dupPct:0,bookings:0,e2bPct:0};
+  const monthSet=new Set(months);
+  const leadRows=rows.filter(r=>monthSet.has(r.lead_month));
+  const uniqueLeads=new Set(leadRows.filter(r=>r.isUnique).map(r=>r.lead_number)).size;
+  const totalLeads=leadRows.length;
+  const dupLeads=totalLeads-new Set(leadRows.map(r=>r.lead_number)).size;
+  const dupPct=totalLeads>0?(totalLeads-uniqueLeads)/totalLeads*100:0;
+  let bookings=0;
+  for(const M of months){
+    const valid=prevMonthsSet(M,3);
+    bookings+=new Set(
+      rows.filter(r=>r.booking_month===M&&valid.has(r.lead_month))
+          .map(r=>r.lead_number)
+    ).size;
+  }
+  const e2bPct=uniqueLeads>0?(bookings/uniqueLeads*100):0;
+  return{totalLeads,uniqueLeads,dupLeads,dupPct,bookings,e2bPct};
+}
+
 /* ── Formatters & badges ──────────────────────────────────────────── */
 function Nf(n){return n==null||isNaN(n)?'—':Number(n).toLocaleString('en-IN');}
 function Pf(n,d=1){return(n==null||isNaN(n))?'—':n.toFixed(d)+'%';}
@@ -562,17 +583,17 @@ const SRC_GROUPS=[
 const GRP_MAP={};SRC_GROUPS.forEach(g=>g.members.forEach(m=>{GRP_MAP[m]=g.name;}));
 
 /* ── Per-source mini chart ────────────────────────────────────────── */
-const SourceMiniChart=React.memo(function SourceMiniChart({src,srcRows,allMonths,colorCfg}){
+const SourceMiniChart=React.memo(function SourceMiniChart({src,srcRows,months,colorCfg}){
   const chartRef=useRef(); const chartInst=useRef();
 
-  /* Per-month data for this source (oldest → newest for chart x-axis) */
-  const chartMonths=useMemo(()=>[...allMonths].sort((a,b)=>monthOrder(a)-monthOrder(b)),[allMonths]);
+  /* Per-month data for this source (oldest → newest for chart x-axis) — respects the active month filter */
+  const chartMonths=useMemo(()=>[...months].sort((a,b)=>monthOrder(a)-monthOrder(b)),[months]);
   const perMonth=useMemo(()=>chartMonths.map(M=>{
     const a=aggRE(srcRows,M);
     return{month:M,uniqueLeads:a.uniqueLeads,e2bPct:a.e2bPct};
   }),[srcRows,chartMonths]);
 
-  const totals=useMemo(()=>aggRE(srcRows,'All'),[srcRows]);
+  const totals=useMemo(()=>aggMulti(srcRows,chartMonths),[srcRows,chartMonths]);
 
   useEffect(()=>{
     const canvas=chartRef.current;
@@ -902,7 +923,7 @@ const SourceTab=React.memo(function SourceTab({rows,mf}){
       sources.map((src,i)=>ce(SourceMiniChart,{
         key:src,src,
         srcRows:srcRowsMap[src]||[],
-        allMonths,
+        months:activeMonths,
         colorCfg:srcColors[src]||getSrcColor(src,i)
       }))
     ),
