@@ -159,14 +159,6 @@ function monthOrder(m){
   return parseInt(match[2])*12+mi;
 }
 
-/* Default month-pill selection: a specific global filter month if set, otherwise just the
-   latest available month — NOT every month, which would render one heavy grid per month
-   by default and make every dimension tab slow to open. */
-function defaultMonthSel(mf,allMonths){
-  if(mf&&mf!=='All') return new Set([mf]);
-  return allMonths&&allMonths.length?new Set([allMonths[0]]):new Set(['all']);
-}
-
 /* ── Parse raw rows into structured records ───────────────────────── */
 function parseRows(raw){
   if(!raw.length) return [];
@@ -372,6 +364,93 @@ function aggGrouped(rows,mf,dimKey){
     }
   }
   return{grand:fin(total),grandPaid:fin(paid),grandOrg:fin(org),grandSrc,dimAggs};
+}
+
+/* Same shape as aggGrouped(), but for EVERY lead month in `rows` at once — one single pass
+   produces a Map<month, {grand,grandPaid,grandOrg,grandSrc,dimAggs}> instead of calling
+   aggGrouped() once per month (which would re-scan the full row set per month just to find
+   the handful of rows that belong to it). A row's lead-side counts land in its own
+   lead_month's bucket; its booking-side count (if within the M-2 attribution window) lands
+   in its own booking_month's bucket — independently, exactly like aggRE's per-month branch,
+   just computed for every month in one traversal. This is what makes showing "by month"
+   grids for every month (not just the latest) affordable on large datasets. */
+function aggGroupedByMonth(rows,dimKey){
+  const PAID_MBRS=SRC_GROUPS[0].members,ORG_MBRS=SRC_GROUPS[1].members;
+  function mk(){ return{totalLeads:0,uniqueSet:new Set(),bookingSet:new Set()}; }
+  function acc(map,key){ let a=map.get(key); if(a===undefined){a=mk();map.set(key,a);} return a; }
+  function newBundle(){ return{total:mk(),paid:mk(),org:mk(),bySrc:new Map(),byDim:new Map(),byDimSrc:new Map(),byDimPaid:new Map(),byDimOrg:new Map()}; }
+
+  const bundles=new Map();
+  function getBundle(m){ let b=bundles.get(m); if(!b){b=newBundle();bundles.set(m,b);} return b; }
+
+  for(const r of rows){
+    const src=r.source;
+    const inPaid=PAID_MBRS.includes(src),inOrg=ORG_MBRS.includes(src);
+    const dv=dimKey?dimKey(r):null;
+
+    if(r.lead_month){
+      const b=getBundle(r.lead_month);
+      const bumpLead=a=>{ a.totalLeads++; if(r.isUnique) a.uniqueSet.add(r.lead_number); };
+      bumpLead(b.total);
+      if(inPaid) bumpLead(b.paid);
+      if(inOrg) bumpLead(b.org);
+      bumpLead(acc(b.bySrc,src));
+      if(dv!=null){
+        bumpLead(acc(b.byDim,dv));
+        bumpLead(acc(b.byDimSrc,dv+''+src));
+        if(inPaid) bumpLead(acc(b.byDimPaid,dv));
+        if(inOrg) bumpLead(acc(b.byDimOrg,dv));
+      }
+    }
+    if(r.booking_month&&r.lead_month){
+      const diff=monthOrder(r.booking_month)-monthOrder(r.lead_month);
+      if(diff>=0&&diff<=2){
+        const b=getBundle(r.booking_month);
+        const bumpBooking=a=>a.bookingSet.add(r.lead_number);
+        bumpBooking(b.total);
+        if(inPaid) bumpBooking(b.paid);
+        if(inOrg) bumpBooking(b.org);
+        bumpBooking(acc(b.bySrc,src));
+        if(dv!=null){
+          bumpBooking(acc(b.byDim,dv));
+          bumpBooking(acc(b.byDimSrc,dv+''+src));
+          if(inPaid) bumpBooking(acc(b.byDimPaid,dv));
+          if(inOrg) bumpBooking(acc(b.byDimOrg,dv));
+        }
+      }
+    }
+  }
+
+  function fin(a){
+    const uniqueLeads=a.uniqueSet.size,dupLeads=a.totalLeads-uniqueLeads;
+    const dupPct=a.totalLeads>0?dupLeads/a.totalLeads*100:0;
+    const bookings=a.bookingSet.size;
+    const e2bPct=uniqueLeads>0?bookings/uniqueLeads*100:0;
+    return{totalLeads:a.totalLeads,uniqueLeads,dupLeads,dupPct,bookings,e2bPct};
+  }
+
+  const out=new Map();
+  for(const[month,b] of bundles){
+    const grandSrc={}; for(const[k,v] of b.bySrc) grandSrc[k]=fin(v);
+    const dimAggs={};
+    if(dimKey){
+      for(const dv of b.byDim.keys()){
+        const srcAgg={};
+        for(const k of b.bySrc.keys()){
+          const a=b.byDimSrc.get(dv+''+k);
+          srcAgg[k]=a?fin(a):EMPTY_AGG;
+        }
+        dimAggs[dv]={
+          total:fin(b.byDim.get(dv)),
+          paid:b.byDimPaid.has(dv)?fin(b.byDimPaid.get(dv)):EMPTY_AGG,
+          org:b.byDimOrg.has(dv)?fin(b.byDimOrg.get(dv)):EMPTY_AGG,
+          src:srcAgg,
+        };
+      }
+    }
+    out.set(month,{grand:fin(b.total),grandPaid:fin(b.paid),grandOrg:fin(b.org),grandSrc,dimAggs});
+  }
+  return out;
 }
 
 /* ── Vahan state-wise industry retails (source: RE Vahan retails.xlsx) ──── */
@@ -845,7 +924,7 @@ function l2rColor(pct){
   return '#E3B0B0';
 }
 
-const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLabel,badgeLabel,vahanMonths}){
+const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLabel,badgeLabel,vahanMonths,precomputed}){
   const vMonths=useMemo(()=>vahanMonths&&vahanMonths.length?vahanMonths:[M],[vahanMonths,M]);
   const [expanded,setExpanded]=useState(new Set());
   const toggleGrp=name=>setExpanded(p=>{const n=new Set(p);n.has(name)?n.delete(name):n.add(name);return n;});
@@ -881,8 +960,11 @@ const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLa
   /* Single pass over `rows` computes grand total, per-source, per-dim and per-(dim×source)
      stats together — see aggGrouped() for why this replaced one aggRE() call per
      (dim,source) combination (was O(rows × dims × sources), the dominant cost on real
-     datasets with hundreds of thousands of rows and 30+ states). */
-  const grouped=useMemo(()=>aggGrouped(rows,M,r=>r[rowKey]||'Unknown'),[rows,M,rowKey]);
+     datasets with hundreds of thousands of rows and 30+ states). If the caller already
+     has this month's data from a multi-month single pass (aggGroupedByMonth — used when
+     rendering one grid per month so the full row set isn't re-scanned per month), it's
+     passed in via `precomputed` instead of recomputing here. */
+  const grouped=useMemo(()=>precomputed||aggGrouped(rows,M,r=>r[rowKey]||'Unknown'),[rows,M,rowKey,precomputed]);
   const grand=grouped.grand;
   const grandSrc=isSourceGrid?{}:grouped.grandSrc;
   const grandPaid=isSourceGrid?EMPTY_AGG:grouped.grandPaid;
@@ -1129,12 +1211,13 @@ const SourceTab=React.memo(function SourceTab({rows,mf}){
   ,[rows]);
 
   /* Driven solely by the global Lead Month filter — no local month-pill row.
-     A specific month shows just that month; "All" defaults to the latest month only,
-     so opening this tab doesn't render a heavy grid per month. */
-  const activeMonths=useMemo(()=>{
-    const s=defaultMonthSel(mf,allMonths);
-    return s.has('all')?allMonths:allMonths.filter(m=>s.has(m));
-  },[mf,allMonths]);
+     A specific month shows just that month; "All" shows every month. Showing every month
+     used to mean one full O(rows) aggRE pass per month — now it's one combined pass via
+     aggGroupedByMonth (below), so there's no performance reason left to hide months. */
+  const activeMonths=useMemo(()=>mf&&mf!=='All'?[mf]:allMonths,[mf,allMonths]);
+
+  /* One single pass over `rows` producing every month's grid data at once. */
+  const byMonth=useMemo(()=>aggGroupedByMonth(rows,r=>r.source||'Unknown'),[rows]);
 
   /* Pre-compute per-source rows (all months, used by mini charts) */
   const srcRowsMap=useMemo(()=>{
@@ -1167,7 +1250,7 @@ const SourceTab=React.memo(function SourceTab({rows,mf}){
     ),
 
     /* Compact matrix grids — one per active month */
-    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey:'source',dimLabel:'Source'}))
+    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey:'source',dimLabel:'Source',precomputed:byMonth.get(M)}))
   );
 });
 
@@ -1179,16 +1262,18 @@ const DimSourceTab=React.memo(function DimSourceTab({rows,mf,rowKey,dimLabel,xTa
       .sort((a,b)=>monthOrder(b)-monthOrder(a))
   ,[rows]);
   /* Driven solely by the global Lead Month filter — no local month-pill row.
-     Defaults to latest month only, not every month — rendering one heavy grid per month
-     by default made this tab slow to open whenever there were several months of data. */
-  const activeMonths=useMemo(()=>{
-    const s=defaultMonthSel(mf,allMonths);
-    return s.has('all')?allMonths:allMonths.filter(m=>s.has(m));
-  },[mf,allMonths]);
+     A specific month shows just that month; "All" shows every month — affordable because
+     byMonth (below) computes every month's grid data in one combined pass. */
+  const activeMonths=useMemo(()=>mf&&mf!=='All'?[mf]:allMonths,[mf,allMonths]);
+  /* One single pass over `rows` producing every month's grid data at once — see
+     aggGroupedByMonth(). The "All Months Summary" grid below still uses the regular
+     aggGrouped() (via CompactMonthGrid's own internal call) since it aggregates across
+     months together rather than breaking them apart. */
+  const byMonth=useMemo(()=>aggGroupedByMonth(rows,r=>r[rowKey]||'Unknown'),[rows,rowKey]);
   return ce('div',{className:'fade-up'},
     ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',
       letterSpacing:'.08em',marginBottom:12}},dimLabel+' × Source — by Month'),
-    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey,dimLabel})),
+    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey,dimLabel,precomputed:byMonth.get(M)})),
     ce('div',{style:{margin:'24px 0 16px',borderTop:'2px solid #D1D5DB'}}),
     ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',
       letterSpacing:'.08em',marginBottom:12}},xTabLabel+' — All Months Summary'),
