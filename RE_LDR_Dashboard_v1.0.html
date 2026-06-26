@@ -145,12 +145,18 @@ const {useState,useEffect,useMemo,useRef,useCallback,useTransition}=React;
 /* ── Month helpers ────────────────────────────────────────────────── */
 const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+/* year*12+monthIndex — a genuinely linear month count, not just a sortable encoding.
+   aggRE/aggMulti subtract two monthOrder() values to get a month delta for the booking
+   lookback window; with *100 instead of *12 that delta jumps by 89 across every Dec→Jan
+   boundary (e.g. Jan'2027 - Dec'2026 = 202700-202611 = 89, not 1), silently dropping any
+   booking attribution that spans a calendar year. *12 makes consecutive months always
+   differ by exactly 1, year boundary or not. */
 function monthOrder(m){
   if(!m||m==='-'||m==='') return 0;
   const match=m.match(/([A-Za-z]+)'(\d+)/);
   if(!match) return 0;
   const mi=MONTH_NAMES.indexOf(match[1]);
-  return parseInt(match[2])*100+mi;
+  return parseInt(match[2])*12+mi;
 }
 
 /* Default month-pill selection: a specific global filter month if set, otherwise just the
@@ -359,16 +365,14 @@ const OverviewTab=React.memo(function OverviewTab({rows,mf}){
     });
   },[rows]);
 
-  /* Source breakdown */
+  /* Source breakdown — [source, agg] pairs, computed once (was re-running aggRE per
+     source on every render inside the table body) and sorted by the same month-filtered
+     Unique Leads value the table actually displays. */
   const srcBreak=useMemo(()=>{
-    const map={};
-    for(const r of rows){
-      const s=r.source||'Unknown';
-      if(!map[s]) map[s]=0;
-      if(r.isUnique) map[s]++;
-    }
-    return Object.entries(map).sort((a,b)=>b[1]-a[1]);
-  },[rows]);
+    const srcs=[...new Set(rows.map(r=>r.source||'Unknown'))];
+    return srcs.map(s=>[s,aggRE(rows.filter(r=>r.source===s),mf)])
+      .sort((a,b)=>b[1].uniqueLeads-a[1].uniqueLeads);
+  },[rows,mf]);
 
   /* Insights */
   const insights=useMemo(()=>{
@@ -485,8 +489,7 @@ const OverviewTab=React.memo(function OverviewTab({rows,mf}){
             )
           ),
           ce('tbody',null,
-            srcBreak.map(([src],i)=>{
-              const a=aggRE(rows.filter(r=>r.source===src),mf);
+            srcBreak.map(([src,a],i)=>{
               return ce('tr',{key:i},
                 ce('td',{className:'label'},src),
                 ce('td',null,Nf(a.totalLeads)),
@@ -740,6 +743,7 @@ const SourceMiniChart=React.memo(function SourceMiniChart({src,srcRows,months,co
 });
 
 /* ── Compact Matrix Grid (Source / LT / Model / State tabs) ─────────── */
+const EMPTY_AGG=Object.freeze({totalLeads:0,uniqueLeads:0,dupLeads:0,dupPct:0,bookings:0,e2bPct:0});
 function l2rColor(pct){
   if(!pct||pct<=0) return '#F3F4F6';
   if(pct>=5) return '#B7DDBE';
@@ -776,14 +780,20 @@ const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLa
   const ORG_MBRS=SRC_GROUPS[1].members;    // ['Organic','Non MS']
   const ALL_SRCS=[...PAID_MBRS,...ORG_MBRS];
 
+  /* On the Source tab the rows ARE the sources already, so the Paid/Organic/per-source
+     breakdowns are never rendered there (TOPGROUPS below collapses to just "Total") —
+     skip computing them entirely instead of running 6 wasted aggRE passes per row. */
+  const isSourceGrid=rowKey==='source';
+
   const grand=useMemo(()=>aggRE(rows,M),[rows,M]);
   const grandSrc=useMemo(()=>{
+    if(isSourceGrid) return {};
     const r={};
     ALL_SRCS.forEach(src=>{ r[src]=aggRE(rows.filter(x=>x.source===src),M); });
     return r;
-  },[rows,M]);
-  const grandPaid=useMemo(()=>aggRE(rows.filter(r=>PAID_MBRS.includes(r.source)),M),[rows,M]);
-  const grandOrg=useMemo(()=>aggRE(rows.filter(r=>ORG_MBRS.includes(r.source)),M),[rows,M]);
+  },[rows,M,isSourceGrid]);
+  const grandPaid=useMemo(()=>isSourceGrid?EMPTY_AGG:aggRE(rows.filter(r=>PAID_MBRS.includes(r.source)),M),[rows,M,isSourceGrid]);
+  const grandOrg=useMemo(()=>isSourceGrid?EMPTY_AGG:aggRE(rows.filter(r=>ORG_MBRS.includes(r.source)),M),[rows,M,isSourceGrid]);
 
   const dimRowsMap=useMemo(()=>{
     const m={};
@@ -794,6 +804,10 @@ const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLa
   const dimAggs=useMemo(()=>{
     const res={};
     for(const [v,vr] of Object.entries(dimRowsMap)){
+      if(isSourceGrid){
+        res[v]={total:aggRE(vr,M),paid:EMPTY_AGG,org:EMPTY_AGG,src:{}};
+        continue;
+      }
       const srcAgg={};
       ALL_SRCS.forEach(src=>{ srcAgg[src]=aggRE(vr.filter(r=>r.source===src),M); });
       res[v]={
@@ -804,11 +818,7 @@ const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLa
       };
     }
     return res;
-  },[dimRowsMap,M]);
-
-  /* Top-level groups: Total (fixed) | Paid (collapsible: MS FB, Adwords) | Organic + Non MS (collapsible: Organic, Non MS)
-     — on the Source tab the rows ARE the sources already, so the Paid/Organic column split is redundant; show Total only. */
-  const isSourceGrid=rowKey==='source';
+  },[dimRowsMap,M,isSourceGrid]);
   const TOPGROUPS=isSourceGrid?[
     {label:'Total',bg:'#58616A',name:null,children:null,aggKey:'total',grandLeads:grand.uniqueLeads},
   ]:[
@@ -1206,158 +1216,6 @@ const GeoModelTab=React.memo(function GeoModelTab({rows,mf}){
   );
 });
 
-/* DEAD CODE REMOVED — was CrossTab, now replaced by DimMonthGrid */
-function UploadScreen_DEAD(){const[x]=useState(0);if(x)return null;
-  /* DEAD */
-
-  const sources=useMemo(()=>[...new Set(rows.map(r=>r.source))].filter(Boolean).sort(),[rows]);
-  const rowVals=useMemo(()=>[...new Set(rows.map(r=>r[rowKey]))].filter(Boolean),[rows,rowKey]);
-
-  /* Pre-group by (rowVal, source) for performance */
-  const cellMap=useMemo(()=>{
-    const m={};
-    for(const r of rows){
-      const rk=r[rowKey]||'Unknown';
-      const sk=r.source||'Unknown';
-      const key=rk+'|||'+sk;
-      if(!m[key]) m[key]=[];
-      m[key].push(r);
-    }
-    return m;
-  },[rows,rowKey]);
-
-  const rowMap=useMemo(()=>{
-    const m={};
-    for(const r of rows){
-      const rk=r[rowKey]||'Unknown';
-      if(!m[rk]) m[rk]=[];
-      m[rk].push(r);
-    }
-    return m;
-  },[rows,rowKey]);
-
-  const srcMap=useMemo(()=>{
-    const m={};
-    for(const src of sources) m[src]=rows.filter(r=>r.source===src);
-    return m;
-  },[rows,sources]);
-
-  const COL_OPTIONS=[
-    {val:'uniqueLeads',label:'Unique Leads'},
-    {val:'bookings',label:'Bookings'},
-    {val:'e2bPct',label:'E2B %'},
-    {val:'dupPct',label:'Dup %'},
-  ];
-
-  const getMetric=(a,col)=>{
-    switch(col){case'uniqueLeads':return a.uniqueLeads;case'bookings':return a.bookings;case'e2bPct':return a.e2bPct;case'dupPct':return a.dupPct;default:return a.uniqueLeads;}
-  };
-
-  const sortedRows=useMemo(()=>[...rowVals].sort((a,b)=>{
-    const mA=sortSrc==='__total__'?aggRE(rowMap[a]||[],mf):aggRE(cellMap[a+'|||'+sortSrc]||[],mf);
-    const mB=sortSrc==='__total__'?aggRE(rowMap[b]||[],mf):aggRE(cellMap[b+'|||'+sortSrc]||[],mf);
-    const vA=getMetric(mA,sortCol);
-    const vB=getMetric(mB,sortCol);
-    return sortDir==='desc'?vB-vA:vA-vB;
-  }),[rowVals,rowMap,cellMap,sortSrc,sortCol,sortDir,mf]);
-
-  const displayRows=showAll?sortedRows:sortedRows.slice(0,limit);
-  const grand=useMemo(()=>aggRE(rows,mf),[rows,mf]);
-  const srcTotals=useMemo(()=>{const t={};for(const s of sources)t[s]=aggRE(srcMap[s]||[],mf);return t;},[srcMap,sources,mf]);
-
-  const SRC_BG=['#1B4332','#1e40af','#166534','#5B21B6','#0e4a6e','#374151'];
-  const NCOLS=4;
-  const totalCols=1+(1+sources.length)*NCOLS;
-
-  const TH={padding:'6px 4px',fontWeight:700,fontSize:9,textTransform:'uppercase',letterSpacing:'.05em',color:'#fff',background:'#081C15',textAlign:'center',border:'1px solid rgba(255,255,255,.12)',whiteSpace:'nowrap',position:'sticky',top:0,zIndex:2};
-  const THS={...TH,background:'#1B4332',fontSize:8,color:'#A8D5BA',position:'sticky',top:30,zIndex:1,padding:'4px 4px'};
-  const TD={padding:'4px 6px',border:'1px solid #D8EED8',fontSize:10,textAlign:'center',fontFamily:'DM Mono,monospace',verticalAlign:'middle'};
-  const TDL={...TD,textAlign:'left',fontFamily:'inherit',fontWeight:600,color:'#0a1f14',background:'#fff',position:'sticky',left:0,zIndex:1,borderRight:'2px solid #A8D5BA'};
-  const TDT={...TD,background:'#081C15',color:'#f0f7f4',fontWeight:700};
-  const TDTl={...TDT,textAlign:'left',fontFamily:'inherit',color:'#A8D5BA',borderRight:'2px solid #1B4332'};
-
-  const SUB=['Unique','Books','E2B%','Dup%'];
-  const SUB_C=['#A8D5BA','#fbbf24','#86efac','#c4b5fd'];
-
-  function mk(a,pfx,dark=false,bg='#fff'){
-    const b={...TD,background:dark?'#081C15':bg};
-    const tc=dark?'#f0f7f4':'#111827';
-    return[
-      ce('td',{key:pfx+'u',style:{...b,color:tc,fontWeight:700,borderLeft:'2px solid rgba(0,0,0,.06)'}},a.uniqueLeads?Nf(a.uniqueLeads):'—'),
-      ce('td',{key:pfx+'b',style:{...b,color:dark?'#fbbf24':tc,fontWeight:a.bookings?700:400}},a.bookings?Nf(a.bookings):'—'),
-      ce('td',{key:pfx+'e',style:{...b,color:dark?'#86efac':(a.uniqueLeads>0?tc:'#9ca3af')}},a.uniqueLeads>0?a.e2bPct.toFixed(1)+'%':'—'),
-      ce('td',{key:pfx+'d',style:{...b,color:dark?'#c4b5fd':(a.totalLeads>0?tc:'#9ca3af')}},a.totalLeads>0?a.dupPct.toFixed(1)+'%':'—'),
-    ];
-  }
-
-  const ddStyle={padding:'4px 10px',fontSize:10,fontFamily:'inherit',fontWeight:600,border:'1px solid #A8D5BA',borderRadius:8,background:'#fff',color:'#1B4332',cursor:'pointer',outline:'none'};
-
-  return ce('div',{className:'fade-up'},
-    ce('div',{style:{marginBottom:10,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
-      ce('span',{style:{fontSize:11,fontWeight:700,color:'#1B4332'}},rowLabel+' — Disposition Cross-tab'),
-      ce('span',{style:{fontSize:10,color:'#2D6A4F'}},'∑ Total first · '+sortedRows.length+' rows · Grand Total at bottom'),
-      ce('div',{style:{marginLeft:'auto',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}),
-      ce('span',{style:{fontSize:9,color:'#1B4332',fontWeight:600}},'Sort by:'),
-      ce('select',{value:sortSrc,onChange:e=>setSortSrc(e.target.value),style:ddStyle},
-        ce('option',{value:'__total__'},'∑ Total'),
-        sources.map(s=>ce('option',{key:s,value:s},s))
-      ),
-      ce('select',{value:sortCol,onChange:e=>setSortCol(e.target.value),style:ddStyle},
-        COL_OPTIONS.map(o=>ce('option',{key:o.val,value:o.val},o.label))
-      ),
-      ce('select',{value:sortDir,onChange:e=>setSortDir(e.target.value),style:ddStyle},
-        ce('option',{value:'desc'},'▼ High → Low'),
-        ce('option',{value:'asc'},'▲ Low → High')
-      )
-    ),
-    ce('div',{className:'card',style:{padding:0,overflow:'hidden'}},
-      ce('table',{style:{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}},
-        ce('thead',null,
-          ce('tr',null,
-            ce('th',{rowSpan:2,style:{...TH,width:'8%',textAlign:'left',position:'sticky',left:0,zIndex:4,background:'#081C15'}},rowLabel.split('×')[0].trim()),
-            ce('th',{colSpan:NCOLS,style:{...TH,background:'#1B4332',borderLeft:'2px solid rgba(255,255,255,.3)',borderRight:'2px solid rgba(255,255,255,.3)'}},'∑ Total'),
-            sources.map((s,i)=>ce('th',{key:s,colSpan:NCOLS,style:{...TH,background:SRC_BG[i%6],borderLeft:'2px solid rgba(255,255,255,.25)',borderRight:'2px solid rgba(255,255,255,.25)'}},s))
-          ),
-          ce('tr',null,
-            SUB.map((s,i)=>ce('th',{key:'t'+i,style:{...THS,color:SUB_C[i]}},s)),
-            sources.flatMap(src=>SUB.map((s,i)=>ce('th',{key:src+i,style:{...THS,color:SUB_C[i]}},s)))
-          )
-        ),
-        ce('tbody',null,
-          /* Grand total first */
-          ce('tr',{className:'total-row'},
-            ce('td',{style:{...TDTl,fontSize:10,padding:'4px 6px'}},'∑ Grand Total'),
-            mk(grand,'GT_T_',true),
-            sources.map(src=>mk(srcTotals[src]||aggRE([],mf),'GT_'+src+'_',true))
-          ),
-          ce('tr',{key:'div'},ce('td',{colSpan:totalCols,style:{padding:0,background:'#1B4332',height:2}})),
-
-          displayRows.map((rv,ri)=>{
-            const rowData=rowMap[rv]||[];
-            const rowTot=aggRE(rowData,mf);
-            return ce('tr',{key:rv,style:{background:ri%2===0?'#fff':'#F0F7F4'}},
-              ce('td',{style:{...TDL,fontSize:10,padding:'3px 6px',color:'#1B4332',background:ri%2===0?'#fff':'#F0F7F4'}},rv),
-              mk(rowTot,rv+'_T_',false,'#F0F7F4'),
-              sources.map(src=>{
-                const cellRows=cellMap[rv+'|||'+src]||[];
-                return mk(aggRE(cellRows,mf),rv+'_'+src+'_',false,'#fff');
-              })
-            );
-          }),
-
-          sortedRows.length>limit&&!showAll&&
-            ce('tr',{key:'more'},
-              ce('td',{colSpan:totalCols,style:{textAlign:'center',padding:'10px',background:'#F0F7F4'}},
-                ce('button',{onClick:()=>setShowAll(true),
-                  style:{padding:'5px 20px',border:'1px solid #A8D5BA',borderRadius:20,background:'#fff',cursor:'pointer',fontSize:11,color:'#2D6A4F',fontFamily:'inherit'}},
-                  'Show all '+(sortedRows.length-limit)+' more rows ▾')
-              )
-            )
-        )
-      )
-    )
-  );
-}
 
 /* ══════════════════════════════════════════════════════════════════════════
    UPLOAD SCREEN
