@@ -1164,7 +1164,7 @@ function LTSourceTab({rows}){
     const b   = {...TD,background:bg};
     return[
       ce('td',{key:pfx+'t',style:{...b,color:tc,fontWeight:700,borderLeft:'2px solid rgba(0,0,0,.06)'}},
-        m.total?Nf(m.total):'—'),
+        m.total?Nf(m.unique):'—'),
       ce('td',{key:pfx+'i',style:{...b,color:tc,fontWeight:m.interested?600:400}},
         m.interested?Nf(m.interested):'—'),
       ce('td',{key:pfx+'l',style:{...b,color:m.total>0?tc:dim}},
@@ -1182,7 +1182,7 @@ function LTSourceTab({rows}){
 
   /* Sub-header labels */
   const SUB=[
-    {l:'Total',     t:'Total Leads'},
+    {l:'Uniq Leads',t:'Unique Leads = Distinct mobile numbers in this month'},
     {l:'Int',       t:'Interested'},
     {l:'L2E%',      t:'L2E% = Interested ÷ Total'},
     {l:'Conn%',     t:'Connectivity% = Connected ÷ Total'},
@@ -2252,9 +2252,10 @@ function App(){
       if(saved){
         const p=JSON.parse(saved);
         if(p&&p.length){
-          /* If cached data pre-dates mobile parsing, discard it so the user
-             re-uploads and gets correct isMonthDup values.              */
-          if(p[0].mobile===undefined){
+          /* Discard stale cache: no mobile field, OR all mobiles empty
+             (saved before column detection was fixed). Force re-upload. */
+          const hasMobile=p.some(r=>r.mobile&&r.mobile.length>=8);
+          if(!hasMobile){
             localStorage.removeItem('hd_ldr_data');
             return;
           }
