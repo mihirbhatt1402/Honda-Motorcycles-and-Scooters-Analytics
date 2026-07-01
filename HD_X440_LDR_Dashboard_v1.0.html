@@ -281,8 +281,8 @@ function agg(rows){
       attSum=0,attCnt=0;
   for(const r of rows){
     total++;
-    if(r.isDuplicate) dup++; else unique++;
-    if(r.isMonthDup) monthDup++;
+    if(r.isMonthDup) dup++; else unique++;
+    monthDup=dup;
     if(r.isConnected) connected++;
     if(r.group==='interested') interested++;
     else if(r.group==='retailed') retailed++;
