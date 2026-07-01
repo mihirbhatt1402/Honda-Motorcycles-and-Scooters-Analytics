@@ -208,13 +208,21 @@ function Pf(n,d=1){ return (n==null||isNaN(n))?'—':n.toFixed(d)+'%'; }
 /* ── Parse raw XLSX rows into structured records ────────────────────────── */
 function parseRows(raw){
   return raw.map(function(r){
-    /* Flexible column key finder */
+    /* Flexible column key finder — exact match first, then substring fallback */
+    const rKeys=Object.keys(r);
     function get(keys){
       for(const k of (Array.isArray(keys)?keys:[keys])){
-        const kl = k.toLowerCase().replace(/\s+/g,' ').trim();
-        for(const rk of Object.keys(r)){
+        const kl=k.toLowerCase().replace(/\s+/g,' ').trim();
+        for(const rk of rKeys){
           if(rk.toLowerCase().replace(/\s+/g,' ').trim()===kl) return String(r[rk]||'').trim();
         }
+      }
+      return '';
+    }
+    function getSubstr(substr){
+      const sl=substr.toLowerCase();
+      for(const rk of rKeys){
+        if(rk.toLowerCase().includes(sl)){const v=String(r[rk]||'').trim();if(v) return v;}
       }
       return '';
     }
@@ -241,7 +249,8 @@ function parseRows(raw){
     }
 
     const mobile = (get(['Mobile','Mobile Number','Mobile No','Phone','Phone Number',
-      'Contact Number','Contact','Mob No','Mob','Customer Mobile'])||'')
+      'Contact Number','Contact','Mob No','Mob','Customer Mobile'])||
+      getSubstr('mobile')||getSubstr('phone')||getSubstr('mob')||'')
       .replace(/\D/g,'').slice(-10);
 
     return {month,lt:lt||'Unknown',source:source||'Organic',city,state:state||'Unknown',
