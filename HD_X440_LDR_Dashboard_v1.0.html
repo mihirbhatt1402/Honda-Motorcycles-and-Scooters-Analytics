@@ -2603,25 +2603,6 @@ function App({fbUser,role,presence,onSignOut}){
               'LEAD DISPOSITION DASHBOARD v1.0 · BikeDekho')
           )
         ),
-        /* KPI mini-strip */
-        ce('div',{style:{flex:1,display:'flex',gap:14,overflowX:'auto',padding:'8px 0',
-          borderLeft:'1px solid rgba(255,255,255,.3)',paddingLeft:16,marginLeft:4}},
-          [
-            {l:'Total',    v:Nf(totalM.total)},
-            {l:'Unique',   v:Nf(totalM.unique)},
-            {l:'Dup%',     v:totalM.dupPct.toFixed(1)+'%'},
-            {l:'Conn%',    v:totalM.connPct.toFixed(1)+'%'},
-            {l:'Interested',v:Nf(totalM.interested)},
-            {l:'Open',     v:Nf(totalM.open)},
-            {l:'Open%',    v:totalM.openPct.toFixed(1)+'%'},
-            {l:'L2E%',     v:totalM.convPct.toFixed(1)+'%'},
-          ].map((k,i)=>ce('div',{key:i,style:{flexShrink:0,textAlign:'center',minWidth:56}},
-            ce('div',{style:{fontSize:8,fontWeight:700,textTransform:'uppercase',
-              letterSpacing:'.08em',color:'#ffedd5'}},k.l),
-            ce('div',{style:{fontSize:13,fontWeight:800,color:'#fff',
-              fontFamily:'DM Mono,monospace',letterSpacing:'-.02em'}},k.v)
-          ))
-        ),
         /* Sync from Sheets button */
         ce('button',{
           onClick:()=>handleSync(),
