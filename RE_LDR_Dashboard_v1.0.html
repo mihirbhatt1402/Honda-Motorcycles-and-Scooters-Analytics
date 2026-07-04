@@ -1068,8 +1068,6 @@ const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLa
      stats together — see aggGrouped() for why this replaced one aggRE() call per
      (dim,source) combination (was O(rows × dims × sources), the dominant cost on real
      datasets with hundreds of thousands of rows and 30+ states). If the caller already
-     has this month's data from a multi-month single pass (aggGroupedByMonth — used when
-     rendering one grid per month so the full row set isn't re-scanned per month), it's
      passed in via `precomputed` instead of recomputing here. */
   const grouped=useMemo(()=>precomputed||aggGrouped(rows,M,r=>r[rowKey]||'Unknown'),[rows,M,rowKey,precomputed]);
   const grand=grouped.grand;
@@ -1317,14 +1315,8 @@ const SourceTab=React.memo(function SourceTab({rows,mf,viewerMode}){
       .sort((a,b)=>monthOrder(b)-monthOrder(a))
   ,[rows]);
 
-  /* Driven solely by the global Lead Month filter — no local month-pill row.
-     A specific month shows just that month; "All" shows every month. Showing every month
-     used to mean one full O(rows) aggRE pass per month — now it's one combined pass via
-     aggGroupedByMonth (below), so there's no performance reason left to hide months. */
+  /* Driven solely by the global Lead Month filter — no local month-pill row. */
   const activeMonths=useMemo(()=>mf&&mf!=='All'?[mf]:allMonths,[mf,allMonths]);
-
-  /* One single pass over `rows` producing every month's grid data at once. */
-  const byMonth=useMemo(()=>aggGroupedByMonth(rows,r=>r.source||'Unknown'),[rows]);
 
   /* Pre-compute per-source rows (all months, used by mini charts) */
   const srcRowsMap=useMemo(()=>{
@@ -1348,7 +1340,7 @@ const SourceTab=React.memo(function SourceTab({rows,mf,viewerMode}){
       ce(ExportBtn,{onClick:()=>{
         const sheets={};
         for(const M of activeMonths){
-          const g=byMonth.get(M)||aggGrouped(rows,M,r=>r.source||'Unknown');
+          const g=aggGrouped(rows,M,r=>r.source||'Unknown');
           sheets[M]=aggToAoa(g,'Source');
         }
         if(activeMonths.length>1){
@@ -1370,7 +1362,7 @@ const SourceTab=React.memo(function SourceTab({rows,mf,viewerMode}){
     ),
 
     /* Compact matrix grids — one per active month */
-    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey:'source',dimLabel:'Source',precomputed:byMonth.get(M),viewerMode}))
+    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey:'source',dimLabel:'Source',viewerMode}))
   );
 });
 
@@ -1381,22 +1373,15 @@ const DimSourceTab=React.memo(function DimSourceTab({rows,mf,rowKey,dimLabel,xTa
     [...new Set(rows.map(r=>r.lead_month))].filter(Boolean)
       .sort((a,b)=>monthOrder(b)-monthOrder(a))
   ,[rows]);
-  /* Driven solely by the global Lead Month filter — no local month-pill row.
-     A specific month shows just that month; "All" shows every month — affordable because
-     byMonth (below) computes every month's grid data in one combined pass. */
+  /* Driven solely by the global Lead Month filter — no local month-pill row. */
   const activeMonths=useMemo(()=>mf&&mf!=='All'?[mf]:allMonths,[mf,allMonths]);
-  /* One single pass over `rows` producing every month's grid data at once — see
-     aggGroupedByMonth(). The "All Months Summary" grid below still uses the regular
-     aggGrouped() (via CompactMonthGrid's own internal call) since it aggregates across
-     months together rather than breaking them apart. */
-  const byMonth=useMemo(()=>aggGroupedByMonth(rows,r=>r[rowKey]||'Unknown'),[rows,rowKey]);
   return ce('div',{className:'fade-up'},
     ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
       ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',letterSpacing:'.08em'}},dimLabel+' × Source — by Month'),
       ce(ExportBtn,{onClick:()=>{
         const sheets={};
         for(const M of activeMonths){
-          const g=byMonth.get(M)||aggGrouped(rows,M,r=>r[rowKey]||'Unknown');
+          const g=aggGrouped(rows,M,r=>r[rowKey]||'Unknown');
           sheets[M]=aggToAoa(g,dimLabel);
         }
         const gAll=aggGrouped(rows,mf,r=>r[rowKey]||'Unknown');
@@ -1404,7 +1389,7 @@ const DimSourceTab=React.memo(function DimSourceTab({rows,mf,rowKey,dimLabel,xTa
         exportXlsx(sheets,'RE_LDR_'+dimLabel.replace(/\s+/g,'_')+'_x_Source');
       }})
     ),
-    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey,dimLabel,precomputed:byMonth.get(M),viewerMode})),
+    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey,dimLabel,viewerMode})),
     ce('div',{style:{margin:'24px 0 16px',borderTop:'2px solid #D1D5DB'}}),
     ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',
       letterSpacing:'.08em',marginBottom:12}},xTabLabel+' — All Months Summary'),
