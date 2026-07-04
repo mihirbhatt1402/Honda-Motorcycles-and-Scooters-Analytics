@@ -226,8 +226,35 @@ function parseRows(raw){
     const lead_month    = get('Lead Month');
     const booking_status= get('Booking Status');
     const booking_month = get('Booking Month');
+    const booking_date  = get(['Booking Date','BookingDate']);
     const isUnique      = dup.toLowerCase()==='unique';
-    const bm            = (booking_month==='-'||booking_month==='')?'':booking_month;
+    /* Primary: use Booking Month column as-is. Fallback: if Booking Month is blank but
+       Booking Date has a value, derive the month from the date. Handles cases where the
+       Booking Month column is missing for some booked rows, causing an undercount vs
+       a Google-Sheet count that uses Booking Status. */
+    let bm = (booking_month==='-'||booking_month==='')?'':booking_month;
+    if(!bm && booking_date && booking_status.toLowerCase()==='booked'){
+      /* Parse common date formats: DD-Mon-YYYY, DD/MM/YYYY, YYYY-MM-DD, Mon DD YYYY */
+      const dStr=booking_date.trim();
+      let dm=null;
+      /* DD-Mon-YYYY or DD Mon YYYY */
+      let m1=dStr.match(/\d{1,2}[-\s]([A-Za-z]{3})[-\s](\d{4})/);
+      if(m1) dm={mon:m1[1],yr:m1[2]};
+      if(!dm){
+        /* DD/MM/YYYY */
+        let m2=dStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if(m2) dm={mon:MONTH_NAMES[parseInt(m2[2])-1],yr:m2[3]};
+      }
+      if(!dm){
+        /* YYYY-MM-DD */
+        let m3=dStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if(m3) dm={mon:MONTH_NAMES[parseInt(m3[2])-1],yr:m3[1]};
+      }
+      if(dm&&dm.mon&&dm.yr){
+        const monTitle=dm.mon.charAt(0).toUpperCase()+dm.mon.slice(1,3).toLowerCase();
+        if(MONTH_NAMES.includes(monTitle)) bm=monTitle+"'"+dm.yr;
+      }
+    }
     return{
       lead_number,
       lt:lt||'Unknown',
