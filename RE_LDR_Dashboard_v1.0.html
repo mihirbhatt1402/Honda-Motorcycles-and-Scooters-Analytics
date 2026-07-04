@@ -226,61 +226,8 @@ function parseRows(raw){
     const lead_month    = get('Lead Month');
     const booking_status= get('Booking Status');
     const booking_month = get('Booking Month');
-    const booking_date  = get(['Booking Date','BookingDate']);
     const isUnique      = dup.toLowerCase()==='unique';
-    const isBooked_flag = booking_status.toLowerCase()==='booked';
-    /* Parse booking date into "Mon'YYYY" format. Handles:
-       DD-Mon-YYYY, DD/MM/YYYY, YYYY-MM-DD, Mon DD YYYY, Mon DD,YYYY */
-    function dateToBookingMonth(dStr){
-      if(!dStr) return '';
-      dStr=dStr.trim();
-      let dm=null;
-      /* DD-Mon-YYYY or DD Mon YYYY (e.g. 15-Jun-2026 or 15 Jun 2026) */
-      let m1=dStr.match(/\d{1,2}[-\s\/]([A-Za-z]{3,})[-\s\/](\d{4})/);
-      if(m1) dm={mon:m1[1].slice(0,3),yr:m1[2]};
-      if(!dm){
-        /* YYYY-MM-DD */
-        let m3=dStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if(m3) dm={mon:MONTH_NAMES[parseInt(m3[2])-1],yr:m3[1]};
-      }
-      if(!dm){
-        /* DD/MM/YYYY */
-        let m2=dStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-        if(m2){ const mi=parseInt(m2[2])-1; if(mi>=0&&mi<12) dm={mon:MONTH_NAMES[mi],yr:m2[3]}; }
-      }
-      if(!dm){
-        /* Mon DD, YYYY or Mon DD YYYY */
-        let m4=dStr.match(/^([A-Za-z]{3,})\s+\d{1,2},?\s+(\d{4})$/);
-        if(m4) dm={mon:m4[1].slice(0,3),yr:m4[2]};
-      }
-      if(!dm){
-        /* Excel serial number: days since 1900-01-01 (with Lotus 1900 leap bug) */
-        const serial=parseInt(dStr);
-        if(!isNaN(serial)&&serial>40000&&serial<60000){
-          const d=new Date((serial-25569)*86400000);
-          if(!isNaN(d)) dm={mon:MONTH_NAMES[d.getUTCMonth()],yr:String(d.getUTCFullYear())};
-        }
-      }
-      if(dm&&dm.mon&&dm.yr){
-        const monTitle=dm.mon.charAt(0).toUpperCase()+dm.mon.slice(1).toLowerCase().slice(0,2);
-        if(MONTH_NAMES.includes(monTitle)) return monTitle+"'"+dm.yr;
-      }
-      return '';
-    }
-    /* Strategy: when lead is booked and booking_date is available, derive month from date
-       (more reliable than the Booking Month column which may have format inconsistencies).
-       Fall back to Booking Month column only when no date is present. */
-    let bm='';
-    if(isBooked_flag&&booking_date){
-      bm=dateToBookingMonth(booking_date);
-    }
-    if(!bm){
-      const raw=(booking_month==='-'||booking_month==='')?'':booking_month;
-      /* If booking_month column has a value but monthOrder can't parse it (format mismatch),
-         try normalizing it via dateToBookingMonth as a last resort. */
-      if(raw&&monthOrder(raw)===0) bm=dateToBookingMonth(raw)||raw;
-      else bm=raw;
-    }
+    const bm            = (booking_month==='-'||booking_month==='')?'':booking_month;
     return{
       lead_number,
       lt:lt||'Unknown',
