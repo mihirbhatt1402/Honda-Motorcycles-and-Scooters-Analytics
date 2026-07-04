@@ -8,6 +8,11 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<!-- Firebase SDK (compat, no build step needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap');
@@ -60,6 +65,19 @@ select:focus{border-color:var(--green);box-shadow:0 0 0 2px rgba(45,106,79,.15)}
 .prog-fill{background:linear-gradient(90deg,var(--green-d),var(--green));transition:width .3s ease}
 .section-title{font-size:11px;font-weight:700;color:var(--green-900);margin-bottom:8px;display:flex;align-items:center;gap:8px}
 .section-title::after{content:'';flex:1;height:1px;background:var(--green-200)}
+/* ── Auth / Presence styles ─────────────────────────────────────── */
+.auth-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F5FBF8;padding:24px}
+.auth-card{background:#fff;border-radius:16px;padding:40px 36px;max-width:400px;width:100%;text-align:center;box-shadow:0 4px 24px rgba(45,106,79,.15);border:1px solid var(--green-100)}
+.auth-btn{display:inline-flex;align-items:center;gap:10px;padding:11px 24px;border-radius:10px;border:1px solid #d1d5db;background:#fff;font-size:14px;font-weight:600;cursor:pointer;color:#374151;font-family:inherit;box-shadow:0 1px 4px rgba(0,0,0,.08);transition:box-shadow .15s}
+.auth-btn:hover{box-shadow:0 3px 10px rgba(0,0,0,.12)}
+.auth-error{margin-top:14px;padding:8px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#dc2626;font-weight:500}
+.presence-strip{display:flex;align-items:center;gap:6px;padding:4px 0}
+.avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;cursor:default;position:relative;flex-shrink:0}
+.avatar:hover .avatar-tip{display:block}
+.avatar-tip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#111827;color:#fff;font-size:10px;padding:3px 8px;border-radius:6px;white-space:nowrap;z-index:200;pointer-events:none}
+.admin-panel-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px}
+.admin-card{background:#fff;border-radius:14px;padding:24px 28px;max-width:680px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2);max-height:80vh;overflow-y:auto}
+.viewer-badge{background:#dbeafe;color:#1d4ed8;font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;letter-spacing:.06em;text-transform:uppercase}
 </style>
 </head>
 <body>
@@ -298,6 +316,57 @@ function aggMulti(rows,months){
 }
 
 const EMPTY_AGG=Object.freeze({totalLeads:0,uniqueLeads:0,dupLeads:0,dupPct:0,bookings:0,e2bPct:0});
+
+/* ── Excel export helpers ─────────────────────────────────────────── */
+function exportXlsx(sheetMap,filename){
+  if(!window.XLSX){alert('XLSX library not loaded');return;}
+  const wb=window.XLSX.utils.book_new();
+  for(const[name,aoa] of Object.entries(sheetMap)){
+    const ws=window.XLSX.utils.aoa_to_sheet(aoa);
+    /* auto column widths — scan all rows, set each col to max string length + 2 */
+    const colWidths=[];
+    for(const row of aoa) row.forEach((cell,ci)=>{const l=String(cell==null?'':cell).length;if(!colWidths[ci]||l>colWidths[ci])colWidths[ci]=l;});
+    ws['!cols']=colWidths.map(w=>({wch:Math.min(w+2,40)}));
+    window.XLSX.utils.book_append_sheet(wb,ws,String(name).slice(0,31));
+  }
+  window.XLSX.writeFile(wb,filename+'.xlsx');
+}
+
+/* Convert an aggGrouped() result into an array-of-arrays for one Excel sheet.
+   Produces: [DimLabel] + Total cols + Paid cols + Organic+NonMS cols + per-source cols */
+function aggToAoa(grouped,dimLabel){
+  const{grand,grandPaid,grandOrg,grandSrc,dimAggs}=grouped;
+  const srcs=Object.keys(grandSrc).sort();
+  const hdr=[
+    dimLabel,
+    'Total Leads','Unique Leads','Bookings','E2B%','Dup Leads','Dup%',
+    'Paid Unique','Paid Bookings','Paid E2B%',
+    'Org+NonMS Unique','Org+NonMS Bookings','Org+NonMS E2B%',
+    ...srcs.flatMap(s=>[s+' Unique',s+' Bookings',s+' E2B%']),
+  ];
+  function toRow(label,a,paid,org,srcMap){
+    return[
+      label,
+      a.totalLeads,a.uniqueLeads,a.bookings,+a.e2bPct.toFixed(2),a.dupLeads,+a.dupPct.toFixed(2),
+      paid.uniqueLeads,paid.bookings,+paid.e2bPct.toFixed(2),
+      org.uniqueLeads,org.bookings,+org.e2bPct.toFixed(2),
+      ...srcs.flatMap(s=>{const x=(srcMap&&srcMap[s])||EMPTY_AGG;return[x.uniqueLeads,x.bookings,+x.e2bPct.toFixed(2)];})
+    ];
+  }
+  const aoa=[hdr,toRow('∑ Grand Total',grand,grandPaid,grandOrg,grandSrc)];
+  for(const[dv,da] of Object.entries(dimAggs)){
+    aoa.push(toRow(dv,da.total,da.paid||EMPTY_AGG,da.org||EMPTY_AGG,da.src));
+  }
+  return aoa;
+}
+
+function ExportBtn({onClick}){
+  return ce('button',{onClick,title:'Export to Excel',
+    style:{padding:'4px 14px',fontSize:10,fontFamily:'inherit',fontWeight:700,
+      border:'1px solid #A8D5BA',borderRadius:20,background:'#fff',color:'#1B4332',
+      cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}
+  },'⬇ Export Excel');
+}
 
 /* Single-pass grouped aggregation — computes grand total + per-source + per-Paid/Organic-group +
    (if dimKey given) per-dimension-value + per-(dimension×source) stats all in ONE pass over `rows`.
@@ -548,7 +617,7 @@ function dupBadge(pct){
 /* ══════════════════════════════════════════════════════════════════════════
    OVERVIEW TAB
 ══════════════════════════════════════════════════════════════════════════ */
-const OverviewTab=React.memo(function OverviewTab({rows,mf}){
+const OverviewTab=React.memo(function OverviewTab({rows,mf,viewerMode}){
   /* One single pass over `rows` (no dimKey) gives the grand total + per-source breakdown
      used by the KPI strip and Source Summary table below. */
   const grouped=useMemo(()=>aggGrouped(rows,mf,null),[rows,mf]);
@@ -677,7 +746,14 @@ const OverviewTab=React.memo(function OverviewTab({rows,mf}){
 
     /* Source summary table */
     ce('div',{className:'card',style:{padding:'16px 18px',marginBottom:14}},
-      ce('div',{className:'section-title'},'Source Summary'),
+      ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+        ce('div',{className:'section-title',style:{marginBottom:0}},'Source Summary'),
+        ce(ExportBtn,{onClick:()=>{
+          const trend=[['Month','Unique Leads','Bookings','E2B%'],...trendData.map(d=>[d.month,d.uniqueLeads,d.bookings,+d.e2bPct.toFixed(2)])];
+          const src=[['Source','Total Leads','Unique Leads','Bookings','E2B%','Dup Leads','Dup%'],...srcBreak.map(([s,a])=>[s,a.totalLeads,a.uniqueLeads,a.bookings,+a.e2bPct.toFixed(2),a.dupLeads,+a.dupPct.toFixed(2)]),['∑ Grand Total',m.totalLeads,m.uniqueLeads,m.bookings,+m.e2bPct.toFixed(2),m.dupLeads,+m.dupPct.toFixed(2)]];
+          exportXlsx({'Monthly Trend':trend,'Source Breakdown':src},'RE_LDR_Overview');
+        }})
+      ),
       ce('div',{className:'scroll-x'},
         ce('table',null,
           ce('thead',null,
@@ -691,7 +767,7 @@ const OverviewTab=React.memo(function OverviewTab({rows,mf}){
             )
           ),
           ce('tbody',null,
-            srcBreak.map(([src,a],i)=>{
+            !viewerMode&&srcBreak.map(([src,a],i)=>{
               return ce('tr',{key:i},
                 ce('td',{className:'label'},src),
                 ce('td',null,Nf(a.totalLeads)),
@@ -952,7 +1028,7 @@ function l2rColor(pct){
   return '#E3B0B0';
 }
 
-const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLabel,badgeLabel,vahanMonths,precomputed}){
+const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLabel,badgeLabel,vahanMonths,precomputed,viewerMode}){
   const vMonths=useMemo(()=>vahanMonths&&vahanMonths.length?vahanMonths:[M],[vahanMonths,M]);
   const [expanded,setExpanded]=useState(new Set());
   const toggleGrp=name=>setExpanded(p=>{const n=new Set(p);n.has(name)?n.delete(name):n.add(name);return n;});
@@ -1003,7 +1079,7 @@ const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLa
     for(const v of Object.keys(grouped.dimAggs)) res[v]={total:grouped.dimAggs[v].total,paid:EMPTY_AGG,org:EMPTY_AGG,src:{}};
     return res;
   },[grouped,isSourceGrid]);
-  const TOPGROUPS=isSourceGrid?[
+  const TOPGROUPS=(isSourceGrid||viewerMode)?[
     {label:'Total',bg:'#58616A',name:null,children:null,aggKey:'total',grandLeads:grand.uniqueLeads},
   ]:[
     {label:'Total',           bg:'#58616A',name:null,             children:null,     aggKey:'total',grandLeads:grand.uniqueLeads},
@@ -1229,7 +1305,7 @@ const CompactMonthGrid=React.memo(function CompactMonthGrid({M,rows,rowKey,dimLa
 /* ══════════════════════════════════════════════════════════════════════════
    SOURCE ANALYSIS TAB
 ══════════════════════════════════════════════════════════════════════════ */
-const SourceTab=React.memo(function SourceTab({rows,mf}){
+const SourceTab=React.memo(function SourceTab({rows,mf,viewerMode}){
   const sources=useMemo(()=>[...new Set(rows.map(r=>r.source))].filter(Boolean).sort(),[rows]);
 
   /* All months, oldest first for charts (handled inside SourceMiniChart) */
@@ -1264,8 +1340,21 @@ const SourceTab=React.memo(function SourceTab({rows,mf}){
   return ce('div',{className:'fade-up'},
 
     /* Section label */
-    ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',
-      letterSpacing:'.08em',marginBottom:12}},'Source Trend'),
+    ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+      ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',letterSpacing:'.08em'}},'Source Trend'),
+      ce(ExportBtn,{onClick:()=>{
+        const sheets={};
+        for(const M of activeMonths){
+          const g=byMonth.get(M)||aggGrouped(rows,M,r=>r.source||'Unknown');
+          sheets[M]=aggToAoa(g,'Source');
+        }
+        if(activeMonths.length>1){
+          const g=aggGrouped(rows,'All',r=>r.source||'Unknown');
+          sheets['All Months Summary']=aggToAoa(g,'Source');
+        }
+        exportXlsx(sheets,'RE_LDR_Source_Analysis');
+      }})
+    ),
 
     /* Mini charts grid — 2 columns */
     ce('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:24}},
@@ -1278,13 +1367,13 @@ const SourceTab=React.memo(function SourceTab({rows,mf}){
     ),
 
     /* Compact matrix grids — one per active month */
-    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey:'source',dimLabel:'Source',precomputed:byMonth.get(M)}))
+    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey:'source',dimLabel:'Source',precomputed:byMonth.get(M),viewerMode}))
   );
 });
 
 
 /* ── Generic Dimension × Source Tab ──────────────────────────────── */
-const DimSourceTab=React.memo(function DimSourceTab({rows,mf,rowKey,dimLabel,xTabLabel,flat=false}){
+const DimSourceTab=React.memo(function DimSourceTab({rows,mf,rowKey,dimLabel,xTabLabel,viewerMode,flat=false}){
   const allMonths=useMemo(()=>
     [...new Set(rows.map(r=>r.lead_month))].filter(Boolean)
       .sort((a,b)=>monthOrder(b)-monthOrder(a))
@@ -1299,24 +1388,35 @@ const DimSourceTab=React.memo(function DimSourceTab({rows,mf,rowKey,dimLabel,xTa
      months together rather than breaking them apart. */
   const byMonth=useMemo(()=>aggGroupedByMonth(rows,r=>r[rowKey]||'Unknown'),[rows,rowKey]);
   return ce('div',{className:'fade-up'},
-    ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',
-      letterSpacing:'.08em',marginBottom:12}},dimLabel+' × Source — by Month'),
-    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey,dimLabel,precomputed:byMonth.get(M)})),
+    ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+      ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',letterSpacing:'.08em'}},dimLabel+' × Source — by Month'),
+      ce(ExportBtn,{onClick:()=>{
+        const sheets={};
+        for(const M of activeMonths){
+          const g=byMonth.get(M)||aggGrouped(rows,M,r=>r[rowKey]||'Unknown');
+          sheets[M]=aggToAoa(g,dimLabel);
+        }
+        const gAll=aggGrouped(rows,mf,r=>r[rowKey]||'Unknown');
+        sheets['All Months Summary']=aggToAoa(gAll,dimLabel);
+        exportXlsx(sheets,'RE_LDR_'+dimLabel.replace(/\s+/g,'_')+'_x_Source');
+      }})
+    ),
+    activeMonths.map(M=>ce(CompactMonthGrid,{key:M,M,rows,rowKey,dimLabel,precomputed:byMonth.get(M),viewerMode})),
     ce('div',{style:{margin:'24px 0 16px',borderTop:'2px solid #D1D5DB'}}),
     ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',
       letterSpacing:'.08em',marginBottom:12}},xTabLabel+' — All Months Summary'),
-    ce(CompactMonthGrid,{M:mf,rows,rowKey,dimLabel})
+    ce(CompactMonthGrid,{M:mf,rows,rowKey,dimLabel,viewerMode})
   );
 });
 
-const LTSourceTab=React.memo(function LTSourceTab({rows,mf}){
-  return ce(DimSourceTab,{rows,mf,rowKey:'lt',dimLabel:'LT',xTabLabel:'LT × Source'});
+const LTSourceTab=React.memo(function LTSourceTab({rows,mf,viewerMode}){
+  return ce(DimSourceTab,{rows,mf,rowKey:'lt',dimLabel:'LT',xTabLabel:'LT × Source',viewerMode});
 });
-const ModelSourceTab=React.memo(function ModelSourceTab({rows,mf}){
-  return ce(DimSourceTab,{rows,mf,rowKey:'model',dimLabel:'Model',xTabLabel:'Model × Source'});
+const ModelSourceTab=React.memo(function ModelSourceTab({rows,mf,viewerMode}){
+  return ce(DimSourceTab,{rows,mf,rowKey:'model',dimLabel:'Model',xTabLabel:'Model × Source',viewerMode});
 });
-const StateSourceTab=React.memo(function StateSourceTab({rows,mf}){
-  return ce(DimSourceTab,{rows,mf,rowKey:'state',dimLabel:'State',xTabLabel:'State × Source'});
+const StateSourceTab=React.memo(function StateSourceTab({rows,mf,viewerMode}){
+  return ce(DimSourceTab,{rows,mf,rowKey:'state',dimLabel:'State',xTabLabel:'State × Source',viewerMode});
 });
 
 /* ── Model wise State × Source — replica of State × Source, one grid per Model instead of per Month
@@ -1361,7 +1461,7 @@ const MultiSelect=React.memo(function MultiSelect({label,options,selected,onChan
   );
 });
 
-const GeoModelTab=React.memo(function GeoModelTab({rows,mf}){
+const GeoModelTab=React.memo(function GeoModelTab({rows,mf,viewerMode}){
   const allMonths=useMemo(()=>
     [...new Set(rows.map(r=>r.lead_month))].filter(Boolean).sort((a,b)=>monthOrder(b)-monthOrder(a))
   ,[rows]);
@@ -1381,18 +1481,29 @@ const GeoModelTab=React.memo(function GeoModelTab({rows,mf}){
   },[filteredRows]);
 
   return ce('div',{className:'fade-up'},
-    ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',
-      letterSpacing:'.08em',marginBottom:12,marginTop:8}},'State × Source — by Model'),
+    ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,marginTop:8}},
+      ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',letterSpacing:'.08em'}},'State × Source — by Model'),
+      ce(ExportBtn,{onClick:()=>{
+        const sheets={};
+        for(const{model,rows:mr} of modelGroups){
+          const g=aggGrouped(mr,'All',r=>r.state||'Unknown');
+          sheets[model.slice(0,31)]=aggToAoa(g,'State');
+        }
+        const gAll=aggGrouped(filteredRows,'All',r=>r.state||'Unknown');
+        sheets['All Models']=aggToAoa(gAll,'State');
+        exportXlsx(sheets,'RE_LDR_Model_State_x_Source');
+      }})
+    ),
     modelGroups.map(({model,rows:mr})=>ce(CompactMonthGrid,{
       key:model,M:'All',rows:mr,rowKey:'state',dimLabel:'State',
-      badgeLabel:model,vahanMonths:resolvedMonths
+      badgeLabel:model,vahanMonths:resolvedMonths,viewerMode
     })),
     ce('div',{style:{margin:'24px 0 16px',borderTop:'2px solid #D1D5DB'}}),
     ce('div',{style:{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',
       letterSpacing:'.08em',marginBottom:12}},'Model wise State × Source — All Models Summary'),
     ce(CompactMonthGrid,{
       M:'All',rows:filteredRows,rowKey:'state',dimLabel:'State',
-      badgeLabel:'All Models',vahanMonths:resolvedMonths
+      badgeLabel:'All Models',vahanMonths:resolvedMonths,viewerMode
     })
   );
 });
@@ -1536,7 +1647,8 @@ const TABS=[
   {id:'geomodel',  label:'Model wise State × Source'},
 ];
 
-function App(){
+function App({fbUser,role,presence,onSignOut,onAdminOpen}){
+  const viewerMode=role==='viewer';
   const [rows,setRows]=useState(null);
   const [tab,setTab]=useState('overview');
   /* startTransition keeps the click feeling instant — the active-tab highlight updates
@@ -1631,8 +1743,8 @@ function App(){
       statexsrc: StateSourceTab,
       geomodel:  GeoModelTab,
     };
-    return ce(COMPONENTS[tab],{key:tab,rows:baseRows,mf});
-  },[tab,baseRows,mf]);
+    return ce(COMPONENTS[tab],{key:tab,rows:baseRows,mf,viewerMode});
+  },[tab,baseRows,mf,viewerMode]);
 
   if(!rows) return ce(UploadScreen,{onData:setRows,onSync:handleSync,syncing,syncErr,sheetUrl,setSheetUrl,urlDraft,setUrlDraft,lastSynced});
 
@@ -1669,7 +1781,10 @@ function App(){
         ce('button',{
           onClick:()=>{if(confirm('Clear data and upload new file?')){localStorage.removeItem('re_ldr_data');setRows(null);}},
           style:{flexShrink:0,padding:'6px 16px',background:'transparent',border:'1px solid rgba(255,255,255,.3)',borderRadius:20,color:'#fff',fontSize:10,cursor:'pointer',fontFamily:'inherit',fontWeight:600}
-        },'⬆ File')
+        },'⬆ File'),
+        ce('div',{style:{borderLeft:'1px solid rgba(255,255,255,.25)',paddingLeft:10,marginLeft:4,flexShrink:0}},
+          ce(PresenceStrip,{presence,fbUser,role,onSignOut,onAdminOpen})
+        )
       )
     ),
 
@@ -1742,7 +1857,272 @@ function App(){
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(ce(App,null));
+/* ══════════════════════════════════════════════════════════════════════
+   FIREBASE — Royal Enfield LDR Dashboard
+   Project: re-ldr-dashboard  |  Collections: re_ldr_users  |  RTDB: re_ldr_presence
+══════════════════════════════════════════════════════════════════════ */
+var FIREBASE_CONFIG={
+  apiKey:'AIzaSyD-PLACEHOLDER-re-ldr-dashboard',
+  authDomain:'re-ldr-dashboard.firebaseapp.com',
+  databaseURL:'https://re-ldr-dashboard-default-rtdb.firebaseio.com',
+  projectId:'re-ldr-dashboard',
+  storageBucket:'re-ldr-dashboard.firebasestorage.app',
+  messagingSenderId:'PLACEHOLDER',
+  appId:'PLACEHOLDER',
+};
+var ADMIN_EMAIL='mihir.bhatt@girnarsoft.com';
+var ALLOWED_DOMAIN='@girnarsoft.com';
+var USERS_COL='re_ldr_users';
+var PRESENCE_PATH='re_ldr_presence';
+
+var _fbApp=null;
+function getFirebase(){
+  if(!_fbApp){
+    try{_fbApp=firebase.initializeApp(FIREBASE_CONFIG,'re-ldr');}
+    catch(e){_fbApp=firebase.apps.find(function(a){return a.name==='re-ldr';})||firebase.app('re-ldr');}
+  }
+  return _fbApp;
+}
+function getFbAuth(){return firebase.auth(getFirebase());}
+function getFbDb(){return firebase.firestore(getFirebase());}
+function getFbRTDB(){return firebase.database(getFirebase());}
+
+function ensureUserDoc(user){
+  var ref=getFbDb().collection(USERS_COL).doc(user.uid);
+  return ref.get().then(function(snap){
+    if(!snap.exists){
+      return ref.set({
+        email:user.email,
+        displayName:user.displayName||user.email,
+        photoURL:user.photoURL||'',
+        role:user.email===ADMIN_EMAIL?'admin':'pending',
+        createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    } else if(snap.data().email!==user.email){
+      return ref.update({email:user.email,displayName:user.displayName||user.email,photoURL:user.photoURL||''});
+    }
+  });
+}
+
+function setupPresence(user){
+  var presRef=getFbRTDB().ref(PRESENCE_PATH+'/'+user.uid);
+  presRef.set({uid:user.uid,email:user.email,name:user.displayName||user.email,photo:user.photoURL||'',ts:firebase.database.ServerValue.TIMESTAMP});
+  presRef.onDisconnect().remove();
+  return presRef;
+}
+
+/* ── Login page ─────────────────────────────────────────────────── */
+function LoginPage({onLogin,loading,error}){
+  return ce('div',{className:'auth-screen'},
+    ce('div',{className:'auth-card'},
+      ce('div',{style:{display:'inline-flex',alignItems:'center',gap:12,background:'#2D6A4F',padding:'12px 24px',borderRadius:12,marginBottom:20,boxShadow:'0 4px 20px rgba(45,106,79,.35)'}},
+        ce('div',{style:{width:36,height:36,borderRadius:8,background:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:900,color:'#2D6A4F'}},'RE'),
+        ce('div',{style:{textAlign:'left'}},
+          ce('div',{style:{fontSize:14,fontWeight:800,color:'#fff',letterSpacing:'-.02em'}},'Royal Enfield'),
+          ce('div',{style:{fontSize:9,color:'#D8EED8',letterSpacing:'.06em',fontWeight:600}},'LEAD DISPOSITION DASHBOARD')
+        )
+      ),
+      ce('h2',{style:{fontSize:18,fontWeight:700,color:'#111827',margin:'0 0 8px'}},'Sign in to access'),
+      ce('p',{style:{fontSize:12,color:'#6b7280',margin:'0 0 24px',lineHeight:1.6}},'Use your @girnarsoft.com Google account to continue.'),
+      loading
+        ?ce('div',{style:{padding:'18px 0',color:'#6b7280',fontSize:13}},'Signing in…')
+        :ce('button',{className:'auth-btn',onClick:onLogin},
+            ce('svg',{xmlns:'http://www.w3.org/2000/svg',viewBox:'0 0 48 48',style:{width:20,height:20,flexShrink:0}},
+              ce('path',{fill:'#FFC107',d:'M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z'}),
+              ce('path',{fill:'#FF3D00',d:'M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z'}),
+              ce('path',{fill:'#4CAF50',d:'M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z'}),
+              ce('path',{fill:'#1976D2',d:'M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z'})
+            ),
+            'Continue with Google'
+          ),
+      error&&ce('div',{className:'auth-error'},error)
+    )
+  );
+}
+
+/* ── Pending access page ─────────────────────────────────────────── */
+function PendingPage({user,onSignOut}){
+  return ce('div',{className:'auth-screen'},
+    ce('div',{className:'auth-card'},
+      ce('div',{style:{fontSize:40,marginBottom:12,lineHeight:1}},'⏳'),
+      ce('h2',{style:{fontSize:18,fontWeight:700,color:'#111827',margin:'0 0 8px'}},'Access Pending'),
+      ce('p',{style:{fontSize:13,color:'#6b7280',margin:'0 0 4px',lineHeight:1.5}},user.email+' is pending role assignment.'),
+      ce('p',{style:{fontSize:12,color:'#9ca3af',margin:'0 0 24px'}},'Contact mihir.bhatt@girnarsoft.com to request access.'),
+      ce('button',{onClick:onSignOut,style:{padding:'9px 22px',borderRadius:8,border:'1px solid #d1d5db',background:'#fff',fontSize:13,cursor:'pointer',color:'#374151',fontWeight:600,fontFamily:'inherit'}},'Sign Out')
+    )
+  );
+}
+
+/* ── Presence strip (who's live) ─────────────────────────────────── */
+function PresenceStrip({presence,fbUser,role,onSignOut,onAdminOpen}){
+  var pArr=Object.values(presence||{});
+  var others=pArr.filter(function(p){return p.uid!==fbUser.uid;});
+  var selfPres=pArr.find(function(p){return p.uid===fbUser.uid;})||{name:fbUser.displayName,photo:fbUser.photoURL,email:fbUser.email,uid:fbUser.uid};
+  var COLORS=['#2563eb','#16a34a','#d97706','#7c3aed','#db2777','#0891b2','#ea580c','#0d9488'];
+  function colorFor(uid){return COLORS[((uid||'').charCodeAt(0)+((uid||'').charCodeAt(1)||0))%COLORS.length]||COLORS[0];}
+  function initials(n){return((n||'?').split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2)||'?').toUpperCase();}
+  function Av(p,highlight){
+    return ce('div',{key:p.uid,className:'avatar',style:{background:colorFor(p.uid),border:highlight?'2px solid #A8D5BA':'2px solid rgba(255,255,255,.4)'},title:p.name||p.email},
+      ce('div',{className:'avatar-tip'},p.name||p.email),
+      p.photo?ce('img',{src:p.photo,style:{width:'100%',height:'100%',borderRadius:'50%',objectFit:'cover'},alt:''}):initials(p.name||p.email)
+    );
+  }
+  return ce('div',{className:'presence-strip'},
+    others.length>0&&ce('div',{style:{display:'flex',alignItems:'center',gap:2,marginRight:4}},
+      ce('span',{style:{fontSize:8,color:'rgba(255,255,255,.6)',textTransform:'uppercase',letterSpacing:'.07em',marginRight:4}},'Live:'),
+      others.slice(0,6).map(function(p){return Av(p,false);}),
+      others.length>6&&ce('div',{className:'avatar',style:{background:'rgba(255,255,255,.25)',fontSize:9,color:'#fff'}},'+' +(others.length-6))
+    ),
+    Av(selfPres,true),
+    (role==='admin'||role==='full')&&ce('span',{className:'viewer-badge',style:{background:'rgba(255,255,255,.15)',color:'#D8EED8',borderRadius:20,padding:'2px 8px',fontSize:9,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',marginLeft:4}},role==='admin'?'Admin':'Full'),
+    role==='viewer'&&ce('span',{className:'viewer-badge',style:{marginLeft:4}},'Viewer'),
+    (role==='admin')&&ce('button',{
+      style:{marginLeft:6,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(255,255,255,.3)',background:'rgba(255,255,255,.12)',fontSize:11,cursor:'pointer',color:'#fff',fontWeight:600,fontFamily:'inherit',whiteSpace:'nowrap'},
+      onClick:onAdminOpen
+    },'⚙ Admin'),
+    ce('button',{
+      style:{marginLeft:4,padding:'4px 10px',borderRadius:6,border:'1px solid rgba(255,255,255,.3)',background:'rgba(255,255,255,.1)',fontSize:11,cursor:'pointer',color:'rgba(255,255,255,.85)',fontFamily:'inherit',whiteSpace:'nowrap'},
+      onClick:onSignOut
+    },'Sign Out')
+  );
+}
+
+/* ── Admin panel — role management ─────────────────────────────── */
+function AdminPanel({onClose}){
+  var[users,setUsers]=useState([]);
+  var[saving,setSaving]=useState(null);
+  var[panelErr,setPanelErr]=useState('');
+  useEffect(function(){
+    var unsub=getFbDb().collection(USERS_COL).orderBy('createdAt','asc').onSnapshot(
+      function(snap){setUsers(snap.docs.map(function(d){return Object.assign({id:d.id},d.data());}));},
+      function(e){setPanelErr(e.message);}
+    );
+    return unsub;
+  },[]);
+  function changeRole(uid,newRole){
+    setSaving(uid);
+    getFbDb().collection(USERS_COL).doc(uid).update({role:newRole})
+      .then(function(){setSaving(null);})
+      .catch(function(e){setPanelErr(e.message);setSaving(null);});
+  }
+  var roleColor={admin:'#92400e',full:'#15803d',viewer:'#1d4ed8',pending:'#6b7280'};
+  var roleBg={admin:'#fef3c7',full:'#dcfce7',viewer:'#dbeafe',pending:'#f3f4f6'};
+  return ce('div',{className:'admin-panel-overlay',onClick:function(e){if(e.target===e.currentTarget)onClose();}},
+    ce('div',{className:'admin-card'},
+      ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+        ce('span',{style:{fontSize:15,fontWeight:700,color:'#111827'}},'👥 User Access Management'),
+        ce('button',{style:{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#9ca3af',lineHeight:1},onClick:onClose},'×')
+      ),
+      ce('p',{style:{fontSize:11,color:'#6b7280',margin:'0 0 14px',lineHeight:1.7}},
+        ce('strong',null,'pending'),' — awaiting access  ·  ',
+        ce('strong',null,'viewer'),' — totals only (no source breakdown)  ·  ',
+        ce('strong',null,'full'),' — all columns  ·  ',
+        ce('strong',null,'admin'),' — full + manage users'
+      ),
+      panelErr&&ce('div',{style:{background:'#fef2f2',color:'#dc2626',padding:'8px 12px',borderRadius:8,fontSize:12,marginBottom:12}},panelErr),
+      ce('div',{style:{overflowX:'auto'}},
+        ce('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:480}},
+          ce('thead',null,ce('tr',{style:{background:'#f0f7f4'}},
+            ['Email','Name','Role','Change To'].map(function(h,i){
+              return ce('th',{key:i,style:{padding:'8px 10px',textAlign:'left',fontWeight:700,color:'#1B4332',fontSize:11,borderBottom:'2px solid #A8D5BA'}},h);
+            })
+          )),
+          ce('tbody',null,users.map(function(u){
+            return ce('tr',{key:u.id,style:{borderBottom:'1px solid #F0F7F4'}},
+              ce('td',{style:{padding:'7px 10px',color:'#6b7280',fontSize:11,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},u.email),
+              ce('td',{style:{padding:'7px 10px',color:'#374151',fontSize:11,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},u.displayName||'—'),
+              ce('td',{style:{padding:'7px 10px'}},
+                ce('span',{style:{padding:'2px 8px',borderRadius:20,fontSize:10,fontWeight:700,background:roleBg[u.role]||roleBg.pending,color:roleColor[u.role]||roleColor.pending}},u.role||'pending')
+              ),
+              ce('td',{style:{padding:'7px 10px'}},
+                u.email===ADMIN_EMAIL
+                  ?ce('span',{style:{fontSize:11,color:'#9ca3af'}},'—')
+                  :saving===u.id
+                    ?ce('span',{style:{fontSize:11,color:'#9ca3af'}},'Saving…')
+                    :ce('select',{
+                        value:u.role||'pending',
+                        onChange:function(e){changeRole(u.id,e.target.value);},
+                        style:{fontSize:11,padding:'3px 8px',borderRadius:6,border:'1px solid #d1d5db',cursor:'pointer',background:'#fff',fontFamily:'inherit'}
+                      },
+                      ['pending','viewer','full','admin'].map(function(r){
+                        return ce('option',{key:r,value:r},r.charAt(0).toUpperCase()+r.slice(1));
+                      })
+                    )
+              )
+            );
+          }))
+        )
+      )
+    )
+  );
+}
+
+/* ── AuthGate — wraps App, handles login / role / presence ──────── */
+function AuthGate(){
+  var[authState,setAuthState]=useState('loading');
+  var[fbUser,setFbUser]=useState(null);
+  var[role,setRole]=useState(null);
+  var[presence,setPresence]=useState({});
+  var[authErr,setAuthErr]=useState('');
+  var[authLoading,setAuthLoading]=useState(false);
+  var[showAdmin,setShowAdmin]=useState(false);
+  var cleanups=React.useRef([]);
+
+  useEffect(function(){
+    var auth=getFbAuth();
+    var unsubAuth=auth.onAuthStateChanged(function(user){
+      cleanups.current.forEach(function(f){try{f();}catch(e){}});
+      cleanups.current=[];
+      if(!user){setAuthState('unauth');setFbUser(null);setRole(null);setPresence({});return;}
+      if(!user.email||!user.email.endsWith(ALLOWED_DOMAIN)){
+        setAuthErr('Only '+ALLOWED_DOMAIN+' accounts are allowed.');
+        auth.signOut();return;
+      }
+      setFbUser(user);
+      ensureUserDoc(user).catch(function(e){console.error('[Auth] ensureUserDoc:',e.message);});
+      var presRef=setupPresence(user);
+      cleanups.current.push(function(){try{presRef.remove();}catch(e){}});
+      var unsubRole=getFbDb().collection(USERS_COL).doc(user.uid).onSnapshot(
+        function(snap){
+          var r=(snap.data()||{}).role||'pending';
+          setRole(r);
+          setAuthState(r==='pending'?'pending':'authed');
+        },
+        function(e){console.error('[Auth] role watch:',e.message);}
+      );
+      cleanups.current.push(unsubRole);
+      var presListenRef=getFbRTDB().ref(PRESENCE_PATH);
+      presListenRef.on('value',function(snap){setPresence(snap.val()||{});});
+      cleanups.current.push(function(){presListenRef.off();});
+    });
+    return function(){unsubAuth();cleanups.current.forEach(function(f){try{f();}catch(e){}});};
+  },[]);
+
+  function handleLogin(){
+    setAuthLoading(true);setAuthErr('');
+    var provider=new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({hd:'girnarsoft.com',prompt:'select_account'});
+    getFbAuth().signInWithPopup(provider)
+      .catch(function(e){if(e.code!=='auth/popup-closed-by-user')setAuthErr(e.message);})
+      .then(function(){setAuthLoading(false);},function(){setAuthLoading(false);});
+  }
+
+  function handleSignOut(){
+    cleanups.current.forEach(function(f){try{f();}catch(e){}});
+    getFbAuth().signOut();
+  }
+
+  if(authState==='loading')return ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#6b7280',fontSize:13,fontFamily:'DM Mono,monospace'}},'Authenticating…');
+  if(authState==='unauth')return ce(LoginPage,{onLogin:handleLogin,loading:authLoading,error:authErr});
+  if(authState==='pending')return ce(PendingPage,{user:fbUser,onSignOut:handleSignOut});
+
+  return ce(React.Fragment,null,
+    showAdmin&&ce(AdminPanel,{onClose:function(){setShowAdmin(false);}}),
+    ce(App,{fbUser:fbUser,role:role,presence:presence,onSignOut:handleSignOut,onAdminOpen:function(){setShowAdmin(true);}})
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(ce(AuthGate,null));
 </script>
 </body>
 </html>

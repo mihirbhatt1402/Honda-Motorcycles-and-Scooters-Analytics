@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "re_ldr_presence": {
+      "$uid": {
+        ".read": "auth != null && auth.token.email.matches('.*@girnarsoft\\.com')",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    }
+  }
+}

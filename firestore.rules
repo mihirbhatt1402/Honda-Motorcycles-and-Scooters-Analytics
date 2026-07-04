@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isGirnarsoft() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email.matches('.*@girnarsoft\\.com');
+    }
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'mihir.bhatt@girnarsoft.com';
+    }
+
+    // User profile docs — user reads own, admin reads/writes all
+    match /re_ldr_users/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow create: if isGirnarsoft() && request.auth.uid == uid;
+      allow update: if isAdmin() || (request.auth.uid == uid && !('role' in request.resource.data.diff(resource.data).affectedKeys()));
+      allow delete: if isAdmin();
+    }
+  }
+}
