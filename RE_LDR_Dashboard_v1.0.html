@@ -1694,23 +1694,22 @@ function App({fbUser,role,presence,onSignOut,onAdminOpen}){
   const cities=useMemo(()=>rows?[...new Set(rows.map(r=>r.city))].filter(Boolean).sort():[],[rows]);
   const models=useMemo(()=>rows?[...new Set(rows.map(r=>r.model))].filter(Boolean).sort():[],[rows]);
 
-  /* Base rows: filtered by every multi-select filter, including month — an empty Set means
-     no restriction from that filter. With month pre-filtered here, `mf` passed to each tab
-     only needs to distinguish "exactly one month selected" (pass that month, so per-tab
-     single-month grid logic keeps working) from "zero or multiple selected" (pass 'All' —
-     aggRE/aggGrouped's 'All' branch already sums correctly across whatever months remain
-     present in the pre-filtered rows). */
+  /* Base rows: filtered by source/state/city/model/primarySrc but NOT by month.
+     Month filtering is intentionally excluded here — backward attribution requires
+     rows from up to 2 months before the selected month (e.g. July bookings include
+     leads from May and June). Pre-filtering by lead_month removes those earlier rows,
+     causing booking counts to collapse when a specific month is selected.
+     The `mf` parameter passed to each aggregation function handles month scoping. */
   const baseRows=useMemo(()=>{
     if(!rows) return [];
     return rows.filter(r=>
-      (filters.month.size===0||filters.month.has(r.lead_month))&&
       (filters.source.size===0||filters.source.has(r.source))&&
       (filters.primarySrc.size===0||filters.primarySrc.has(r.primary_src))&&
       (filters.state.size===0||filters.state.has(r.state))&&
       (filters.city.size===0||filters.city.has(r.city))&&
       (filters.model.size===0||filters.model.has(r.model))
     );
-  },[rows,filters.month,filters.source,filters.primarySrc,filters.state,filters.city,filters.model]);
+  },[rows,filters.source,filters.primarySrc,filters.state,filters.city,filters.model]);
 
   const mf=filters.month.size===1?[...filters.month][0]:'All';
 
