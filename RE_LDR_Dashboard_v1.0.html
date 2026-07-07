@@ -1637,8 +1637,11 @@ const TABS=[
 
 function App({fbUser,role,presence,onSignOut,onAdminOpen}){
   const viewerMode=role==='viewer';
+  const VIEWER_HIDDEN_TABS=['source','ltxsrc'];
   const [rows,setRows]=useState(null);
   const [tab,setTab]=useState('overview');
+  /* If role changes to viewer while on a restricted tab, fall back to overview */
+  useEffect(()=>{ if(viewerMode&&VIEWER_HIDDEN_TABS.includes(tab)) setTab('overview'); },[viewerMode]);
   /* startTransition keeps the click feeling instant — the active-tab highlight updates
      right away while the new tab's grids render in the background (isPending drives a
      subtle loading cue instead of the UI appearing to freeze). */
@@ -1807,7 +1810,8 @@ function App({fbUser,role,presence,onSignOut,onAdminOpen}){
     /* Tab bar */
     ce('div',{style:{background:'#fff',borderBottom:'2px solid #D8EED8',position:'sticky',top:54,zIndex:99,boxShadow:'0 2px 8px rgba(45,106,79,.08)'}},
       ce('div',{style:{maxWidth:1600,margin:'0 auto',display:'flex',alignItems:'center',gap:0,padding:'0 24px',opacity:isPending?0.6:1,transition:'opacity .15s'}},
-        TABS.map(t=>ce('button',{key:t.id,className:'tab-pill'+(tab===t.id?' active':''),onClick:()=>startTransition(()=>setTab(t.id))},t.label)),
+        TABS.filter(t=>!(viewerMode&&['source','ltxsrc'].includes(t.id)))
+          .map(t=>ce('button',{key:t.id,className:'tab-pill'+(tab===t.id?' active':''),onClick:()=>startTransition(()=>setTab(t.id))},t.label)),
         isPending&&ce('span',{style:{marginLeft:12,fontSize:12,color:'#6B7280'}},'Loading…')
       )
     ),
@@ -1818,12 +1822,13 @@ function App({fbUser,role,presence,onSignOut,onAdminOpen}){
         ce('label',null,'Filters'),
         ...[
           {k:'month',     label:'Lead Month',     opts:months},
-          {k:'source',    label:'Source',          opts:sources},
+          {k:'source',    label:'Source',          opts:sources,  viewerHide:true},
           {k:'primarySrc',label:'Primary Source',  opts:primSrcs},
           {k:'model',     label:'Model',           opts:models},
           {k:'state',     label:'State',           opts:states},
           {k:'city',      label:'City',            opts:cities},
-        ].map(f=>ce('div',{key:f.k,style:{display:'flex',alignItems:'center',gap:5}},
+        ].filter(f=>!(viewerMode&&f.viewerHide))
+        .map(f=>ce('div',{key:f.k,style:{display:'flex',alignItems:'center',gap:5}},
           ce('span',{style:{fontSize:10,color:'#64748b',fontWeight:600}},f.label+':'),
           ce(MultiSelect,{options:f.opts,selected:filters[f.k],onChange:v=>setFilterKey(f.k,v)})
         )),
