@@ -1,4 +1,4 @@
-name: Deploy RE LDR Dashboard
+name: Deploy HMSI Analytics Dashboard
 
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
       - name: Prepare site
         run: |
           mkdir -p _site
-          cp "RE_LDR_Dashboard_v1.0.html" _site/index.html
+          cp "HMSI_RW_Dashboard_v4.02.html" _site/index.html
           cp _site/index.html _site/404.html
 
       - name: Setup Pages
