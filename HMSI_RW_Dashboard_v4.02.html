@@ -8388,7 +8388,7 @@ var FIREBASE_CONFIG={
   appId:'1:1039114567337:web:f6ad7d0ad20b44a1f973b8',
 };
 var ADMIN_EMAIL='mihir.bhatt@girnarsoft.com';
-var ALLOWED_DOMAIN='@girnarsoft.com';
+var ALLOWED_DOMAINS=['@girnarsoft.com','@girnarcare.com'];
 
 var _fbApp=null;
 function getFirebase(){
@@ -8432,7 +8432,7 @@ function LoginPage({onLogin,loading,error}){
     ce('div',{className:'auth-card'},
       ce('div',{style:{fontSize:44,marginBottom:8,lineHeight:1}},'🏍'),
       ce('h2',{style:{fontSize:22,fontWeight:800,color:'#111827',margin:'0 0 8px'}},'Honda Analytics'),
-      ce('p',{style:{fontSize:13,color:'#6b7280',margin:'0 0 20px',lineHeight:1.5}},'Sign in with your @girnarsoft.com Google account to access the dashboard.'),
+      ce('p',{style:{fontSize:13,color:'#6b7280',margin:'0 0 20px',lineHeight:1.5}},'Sign in with your @girnarsoft.com or @girnarcare.com Google account to access the dashboard.'),
       loading
         ?ce('div',{style:{padding:'18px 0',color:'#6b7280',fontSize:13}},'Signing in…')
         :ce('button',{className:'auth-btn',onClick:onLogin},
@@ -8569,8 +8569,8 @@ function AuthGate(){
       cleanups.current.forEach(function(f){try{f();}catch(e){}});
       cleanups.current=[];
       if(!user){setAuthState('unauth');setFbUser(null);setRole(null);setPresence({});return;}
-      if(!user.email.endsWith(ALLOWED_DOMAIN)){
-        setAuthErr('Only '+ALLOWED_DOMAIN+' accounts are allowed.');
+      if(!ALLOWED_DOMAINS.some(function(d){return user.email.endsWith(d);})){
+        setAuthErr('Only @girnarsoft.com and @girnarcare.com accounts are allowed.');
         auth.signOut();return;
       }
       setFbUser(user);
@@ -8596,7 +8596,7 @@ function AuthGate(){
   function handleLogin(){
     setAuthLoading(true);setAuthErr('');
     var provider=new firebase.auth.GoogleAuthProvider();
-    provider.setCustomParameters({hd:'girnarsoft.com',prompt:'select_account'});
+    provider.setCustomParameters({prompt:'select_account'});
     getFbAuth().signInWithPopup(provider)
       .catch(function(e){if(e.code!=='auth/popup-closed-by-user')setAuthErr(e.message);})
       .then(function(){setAuthLoading(false);},function(){setAuthLoading(false);});
